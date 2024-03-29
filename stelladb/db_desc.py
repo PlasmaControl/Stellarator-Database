@@ -15,7 +15,7 @@ import csv
 from datetime import date
 
 
-def save_to_database(  # pragma: no cover
+def save_to_db_desc(  # pragma: no cover
     filename,
     configid,
     user,

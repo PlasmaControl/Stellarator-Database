@@ -21,6 +21,10 @@ from simsopt.mhd.vmec import Vmec
 # an existing configuration in the database
 
 
+def save_to_db_vmec():
+    return None
+
+
 def vmec_to_csv(  # noqa
     eq,
     current=True,
