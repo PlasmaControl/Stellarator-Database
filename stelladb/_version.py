@@ -41,8 +41,8 @@ def get_config():
     cfg.VCS = "git"
     cfg.style = "pep440"
     cfg.tag_prefix = "v"
-    cfg.parentdir_prefix = "desc-"
-    cfg.versionfile_source = "desc/_version.py"
+    cfg.parentdir_prefix = "stelladb-"
+    cfg.versionfile_source = "stelladb/_version.py"
     cfg.verbose = False
     return cfg
 
