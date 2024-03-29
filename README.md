@@ -6,5 +6,6 @@ This is still a work in progress.
 ## Building conda environment
 ```bash
 conda create --name db
+conda activate db
 pip install -r requirements.txt
 ```
