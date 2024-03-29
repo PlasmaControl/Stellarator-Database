@@ -1,6 +1,8 @@
 """Setup/build/install script for STELLADB."""
 
 import os
+
+import versioneer
 from setuptools import find_packages, setup
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -13,7 +15,8 @@ with open(os.path.join(here, "requirements.txt"), encoding="utf-8") as f:
 
 setup(
     name="stelladb",
-    version="0.1.1",
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     description=(
         "Includes functions to upload DESC and VMEC data to the "
         + "stellarator database."
