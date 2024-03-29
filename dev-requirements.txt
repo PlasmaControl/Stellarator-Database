@@ -1,0 +1,5 @@
+# standard install requirements
+-r ../requirements.txt
+
+# building
+build
