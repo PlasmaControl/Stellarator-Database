@@ -1,0 +1,14 @@
+__pycache__/
+build/
+data/
+dist/
+*.egg-info
+*.gif
+*.h5
+*.ini
+*.mat
+*.out
+*.output
+*.pdf
+*.pyc
+.pymon
