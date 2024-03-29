@@ -13,7 +13,7 @@ with open(os.path.join(here, "requirements.txt"), encoding="utf-8") as f:
 
 setup(
     name="stelladb",
-    version="0.1.0",
+    version="0.1.1",
     description=(
         "Includes functions to upload DESC and VMEC data to the "
         + "stellarator database."
@@ -21,7 +21,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/PlasmaControl/Stellarator-Database/",
-    author="yigit Gunsur Elmacioglu, Rory Conlin, Dario Panici, Egemen Kolemen",
+    author="Yigit Gunsur Elmacioglu, Rory Conlin, Dario Panici, Egemen Kolemen",
     author_email="PlasmaControl@princeton.edu",
     license="MIT",
     keywords="stellarator tokamak equilibrium perturbation mhd "

@@ -3,9 +3,35 @@ Includes the functions required to upload DESC or VMEC results to the stellarato
 
 This is still a work in progress.
 
-## Building conda environment
+## Install using pip
+```bash
+pip install stelladb
+```
+
+## Install using GIT
+
+### Clone GIT repo
+```bash
+git clone https://github.com/PlasmaControl/Stellarator-Database.git
+```
+Once you get the files,
+```bash
+cd Stellarator-Database
+```
+
+### Building conda environment
 ```bash
 conda create --name db
 conda activate db
 pip install -r requirements.txt
+```
+
+## Sample usage
+```python
+from desc.examples import get
+from stelladb import save_to_db_desc
+
+eq = get("HELIOTRON")
+eq.save("test_output_HELIOTRON.h5")
+save_to_db_desc("test_output_HELIOTRON", configid="HELIOTRON", user="username")
 ```
