@@ -29,7 +29,7 @@ pip install -r requirements.txt
 ## Sample usage
 ```python
 from desc.examples import get
-from stelladb import save_to_db_desc
+import stelladb
 
 eq = get("HELIOTRON")
 eq.save("test_output_HELIOTRON.h5")
