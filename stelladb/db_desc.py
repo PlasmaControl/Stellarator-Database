@@ -37,14 +37,39 @@ def save_to_db_desc(  # pragma: no cover
 
     Parameters
     ----------
-    filename : str
+    eq : str, Equilibrium or EquilibriumFamily
         file path of the output file without .h5 extension
+        or the equilibrium to be uploaded
     configid : str
         unique identifier for the configuration
     initialization_method : str (Default: 'surface')
         method used to initialize the equilibrium
-    user :
+    user : str
         user who created the equilibrium (must have an account on the database)
+    isDeviceNew : bool (Default: False)
+        True if the device is new and should be uploaded to the database
+    deviceid : str (Default: None)
+        unique identifier for the device
+    description : str (Default: None)
+        description of the configuration
+    provenance : str (Default: None)
+        where the configuration came from
+    inputfilename : str (Default: None)
+        name of the input file corresponding to this configuration
+    config_class : str (Default: None)
+        class of configuration i.e. quasisymmetry (QA, QH, QP)
+        or omnigenity (QI, OT, OH) or axisymmetry (AS)
+    current : bool (Default: True)
+        True if the equilibrium was solved with fixed current or not if False,
+        was solved with fixed iota
+    deviceNFP : int (Default: 1)
+        number of field periods for the device
+    deviceDescription : str (Default: None)
+        description of the device
+    device_stell_sym : bool (Default: False)
+        stellarator symmetry of the device
+    copy : bool (Default: False)
+        True if the zip and csv files should be kept after uploading
 
     """
     zip_upload_button_id = "zipToUpload"
@@ -253,8 +278,9 @@ def desc_to_csv(  # noqa
 
     Parameters
     ----------
-        eq : str
-            DESC equilibrium to save or path to .h5 of DESC equilibrium to save
+        eq : str, Equilibrium or EquilibriumFamily
+            file path of the output file without .h5 extension
+            or the equilibrium to be uploaded
         current : bool
             True if the equilibrium was solved with fixed current or not if False,
             was solved with fixed iota
