@@ -607,12 +607,6 @@ def device_or_concept_to_csv(  # noqa
 
 def get_driver():  # pragma: no cover
     """Initialize a webdriver for use in uploading to the database."""
-    try:
-        options = webdriver.FirefoxOptions()
-        options.headless = True
-        return webdriver.Firefox(options=options)
-    except:  # noqa: E722
-        pass
 
     try:
         options = webdriver.ChromeOptions()
@@ -622,17 +616,26 @@ def get_driver():  # pragma: no cover
         pass
 
     try:
-        options = webdriver.EdgeOptions()
-        options.use_chromium = True
-        options.add_argument("headless")
-        return webdriver.Edge(options=options)
+        options = webdriver.FirefoxOptions()
+        options.headless = True
+        return webdriver.Firefox(options=options)
     except:  # noqa: E722
         pass
 
     try:
         return webdriver.Safari()
     except:  # noqa: E722
-        print(
+        pass
+
+    try:
+        options = webdriver.EdgeOptions()
+        options.use_chromium = True
+        options.add_argument("headless")
+        return webdriver.Edge(options=options)
+    except:  # noqa: E722
+        import warnings
+
+        warnings.warn(
             "Failed to initialize any webdriver! Consider installing "
             + "Chrome, Safari, Firefox, or Edge."
         )
