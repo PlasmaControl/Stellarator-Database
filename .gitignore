@@ -12,3 +12,6 @@ dist/
 *.pdf
 *.pyc
 .pymon
+*.ipynb
+*input.txt
+*.zip
