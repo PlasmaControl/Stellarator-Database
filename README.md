@@ -21,7 +21,7 @@ cd Stellarator-Database
 
 ### Building conda environment
 ```bash
-conda create --name db
+conda create --name db 'python>=3.9, <=3.12'
 conda activate db
 pip install -r requirements.txt
 ```
@@ -29,7 +29,7 @@ pip install -r requirements.txt
 ## Sample usage
 ```python
 from desc.examples import get
-import stelladb
+from stelladb import save_to_db_desc
 
 eq = get("HELIOTRON")
 eq.save("test_output_HELIOTRON.h5")
