@@ -110,7 +110,6 @@ def vmec_to_csv(  # noqa
         data_vmec_runs["description"] = description
 
     data_vmec_runs["version"] = version  # version property in wout
-    data_vmec_runs["git_commit"] = version  # not sure how this is standarised for vmec
     if inputfilename is not None:
         data_vmec_runs["inputfilename"] = inputfilename
 

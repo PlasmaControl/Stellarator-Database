@@ -1,4 +1,5 @@
 import os
+from desc.equilibrium import Equilibrium, EquilibriaFamily
 from desc.grid import LinearGrid
 from desc.vmec_utils import ptolemy_identity_rev, zernike_to_fourier
 import zipfile
@@ -16,7 +17,7 @@ from datetime import date
 
 
 def save_to_db_desc(  # pragma: no cover
-    filename,
+    eq,
     configid,
     user,
     isDeviceNew=False,
@@ -52,6 +53,27 @@ def save_to_db_desc(  # pragma: no cover
     device_upload_button_id = "deviceToUpload"
     confirm_button_id = "confirmDesc"
 
+    if isinstance(eq, str):
+        if os.path.exists(eq + ".h5"):
+            filename = eq
+            eq = eq + ".h5"
+        else:
+            raise FileNotFoundError(f"{eq}.h5 does not exist.")
+    elif isinstance(eq, Equilibrium):
+        eq = eq
+        filename = configid
+    elif isinstance(eq, EquilibriaFamily):
+        eq = eq
+        filename = configid
+    else:
+        raise TypeError(
+            "Expected type str, Equilibrium or EquilibriumFamily "
+            + f"for eq, got type {type(eq)}"
+        )
+    if os.path.exists("auto_save.h5"):
+        print("Removing auto_save.h5")
+        os.remove("auto_save.h5")
+
     # Check input files, if there isn't any create automatically
     if inputfilename is None:
         if os.path.exists("auto_generated_" + filename + "_input.txt"):
@@ -64,13 +86,31 @@ def save_to_db_desc(  # pragma: no cover
 
             print("Auto-generating input file...")
             writer = InputReader()
-            writer.desc_output_to_input(inputfilename, filename + ".h5")
+            if isinstance(eq, str):
+                writer.desc_output_to_input(inputfilename, eq)
+            elif isinstance(eq, Equilibrium):
+                eq.save("auto_save.h5")
+                writer.desc_output_to_input(inputfilename, "auto_save.h5")
+            elif isinstance(eq, EquilibriaFamily):
+                eq[-1].save("auto_save.h5")
+                writer.desc_output_to_input(inputfilename, "auto_save.h5")
 
     # Zip the files
     print("Zipping files...")
     zip_filename = filename + ".zip"
     with zipfile.ZipFile(zip_filename, "w") as zipf:
-        zipf.write(filename + ".h5")
+        if os.path.exists(filename + ".h5"):
+            zipf.write(filename + ".h5")
+        elif isinstance(eq, Equilibrium):
+            print("Saving equilibrium to .h5 file...")
+            if not os.path.exists("auto_save.h5"):
+                eq.save("auto_save.h5")
+            zipf.write("auto_save.h5")
+        elif isinstance(eq, EquilibriaFamily):
+            print("Saving equilibrium to .h5 file...")
+            if not os.path.exists("auto_save.h5"):
+                eq[-1].save("auto_save.h5")
+            zipf.write("auto_save.h5")
         if inputfilename is not None:
             if os.path.exists(inputfilename):
                 zipf.write(inputfilename)
@@ -90,7 +130,7 @@ def save_to_db_desc(  # pragma: no cover
 
     print("Creating desc_runs.csv and configurations.csv...")
     desc_to_csv(
-        filename + ".h5",  # output filename
+        eq,  # output filename
         name=configid,  # some string descriptive name, not necessarily unique
         provenance=provenance,
         description=description,
@@ -184,6 +224,8 @@ def save_to_db_desc(  # pragma: no cover
     finally:
         # Clean up resources
         driver.quit()
+        if os.path.exists("auto_save.h5"):
+            os.remove("auto_save.h5")
         if not copy:
             os.remove(zip_filename)
             os.remove(csv_filename)
@@ -263,8 +305,22 @@ def desc_to_csv(  # noqa
         reader = hdf5Reader(eq)
         version = reader.read_dict()["__version__"]
         eq = load(eq)[-1]
+    elif isinstance(eq, Equilibrium):
+        import desc
+
+        version = desc.__version__
+        data_desc_runs["outputfile"] = "auto_save.h5"
+    elif isinstance(eq, EquilibriaFamily):
+        import desc
+
+        eq = eq[-1]
+        version = desc.__version__
+        data_desc_runs["outputfile"] = "auto_save.h5"
     else:
-        raise TypeError(f"Expected type str for eq, got type {type(eq)}")
+        raise TypeError(
+            "Expected type str, Equilibrium or EquilibriumFamily "
+            + f"for eq, got type {type(eq)}"
+        )
 
     ############ DESC_runs Data Table ############
     if name is not None:
