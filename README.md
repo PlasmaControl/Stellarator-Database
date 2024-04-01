@@ -36,14 +36,14 @@ eq = get("HELIOTRON")
 # if you are using DESC, you can directly upload Equilibrium or 
 # EquilibriumFamily objects. For EquilibriumFamily, only the last
 # Equilibrium will be uploaded.
-save_to_db_desc(eq, configid="HELIOTRON", user="username")
+save_to_db_desc(eq, config_name="HELIOTRON", user="username")
 
 # if you have an outfile, supply the name of it without extension
 # For DESC example, we need to save it first to get the .h5 file
 eq.save("test_output_HELIOTRON.h5")
-save_to_db_desc("test_output_HELIOTRON", configid="HELIOTRON", user="username")
+save_to_db_desc("test_output_HELIOTRON", config_name="HELIOTRON", user="username")
 
 # use copy parameter, if you want the local copy of the files that are uploaded
 # default value is False
-save_to_db_desc(eq, configid="HELIOTRON", user="username", copy=True)
+save_to_db_desc(eq, config_name="HELIOTRON", user="username", copy=True)
 ```
