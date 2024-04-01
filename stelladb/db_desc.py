@@ -333,9 +333,6 @@ def desc_to_csv(  # noqa
     data_desc_runs["version"] = (
         version  # this is basically redundant with git commit I think
     )
-    data_desc_runs["git_commit"] = (
-        version  # this is basically redundant with git commit I think
-    )
     if inputfilename is not None:
         data_desc_runs["inputfilename"] = inputfilename
 
