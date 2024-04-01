@@ -9,7 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from desc.io.hdf5_io import hdf5Reader, hdf5Writer
+from desc.io.hdf5_io import hdf5Reader
 from desc.io.equilibrium_io import load
 import numpy as np
 import csv
