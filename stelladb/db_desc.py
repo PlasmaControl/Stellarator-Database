@@ -260,16 +260,6 @@ def save_to_db_desc(  # pragma: no cover
             if isDeviceNew:
                 os.remove(device_csv_filename)
 
-    if os.path.exists("auto_save.h5"):
-        os.remove("auto_save.h5")
-    if not copy:
-        os.remove(zip_filename)
-        os.remove(csv_filename)
-        os.remove(config_csv_filename)
-        os.remove(inputfilename)
-        if isDeviceNew:
-            os.remove(device_csv_filename)
-
 
 def desc_to_csv(  # noqa
     eq,
