@@ -1,4 +1,5 @@
-# standard install requirements
+# Developer install requirements to build the package
+# and publish it to PyPI
 -r ./requirements.txt
 
 # building
