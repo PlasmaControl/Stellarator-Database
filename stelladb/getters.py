@@ -13,6 +13,13 @@ def get_hash_desc(eq, data_desc_runs, config_hash):
         + f"{data_desc_runs['iota_profile']}{data_desc_runs['pressure_profile']}{eq.params_dict}"
     )
 
+    unique_id = unique_id.replace(" ", "")
+    unique_id = unique_id.replace("\n", "")
+    unique_id = unique_id.replace(".", "")
+    unique_id = unique_id.replace("[", "")
+    unique_id = unique_id.replace("]", "")
+    unique_id = unique_id.encode("utf8")
+
     return hash(unique_id)
 
 
@@ -22,11 +29,9 @@ def get_hash_config(data_configurations):
     unique_id = ""
     for key in data_configurations.keys():
         if key not in [
-            "config_name",
             "name",
             "provenance",
             "description",
-            "device_name",
             "date_created",
             "date_updated",
             "user_created",
@@ -34,11 +39,18 @@ def get_hash_config(data_configurations):
         ]:
             unique_id += f"{data_configurations[key]}"
 
+    unique_id = unique_id.replace(" ", "")
+    unique_id = unique_id.replace("\n", "")
+    unique_id = unique_id.replace(".", "")
+    unique_id = unique_id.replace("[", "")
+    unique_id = unique_id.replace("]", "")
+    unique_id = unique_id.encode("utf8")
+
     return hash(unique_id)
 
 
 def get_hash_device(devices_and_concepts):
-    """Get a unique identifier for configuration."""
+    """Get a unique identifier for device."""
 
     unique_id = ""
     for key in devices_and_concepts.keys():
@@ -49,6 +61,13 @@ def get_hash_device(devices_and_concepts):
             "user_updated",
         ]:
             unique_id += f"{devices_and_concepts[key]}"
+
+    unique_id = unique_id.replace(" ", "")
+    unique_id = unique_id.replace("\n", "")
+    unique_id = unique_id.replace(".", "")
+    unique_id = unique_id.replace("[", "")
+    unique_id = unique_id.replace("]", "")
+    unique_id = unique_id.encode("utf8")
 
     return hash(unique_id)
 
