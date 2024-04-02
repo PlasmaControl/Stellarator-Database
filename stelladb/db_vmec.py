@@ -8,6 +8,8 @@ import numpy as np
 from scipy.interpolate import InterpolatedUnivariateSpline
 from simsopt.mhd.vmec import Vmec
 
+from .device import device_or_concept_to_csv
+
 # TODO: add threshold to truncate at what amplitude surface Fourier coefficient
 # that it is working
 
@@ -288,61 +290,6 @@ def vmec_to_csv(  # noqa
             if not configurations_csv_exists:
                 writer.writeheader()  # only need header if file did not exist already
             writer.writerow(data_configurations)
-    except OSError:
-        print("I/O error")
-
-    return None
-
-
-def device_or_concept_to_csv(  # noqa
-    name,
-    device_class=None,
-    NFP=None,
-    description=None,
-    stell_sym=False,
-    deviceid=None,
-):
-    """Save concept as a csv with relevant information.
-
-    Args
-    ----
-        device_class (str): class of device i.e. quasisymmetry (QA, QH, QP)
-            or omnigenity (QI, OT, OH) or axisymmetry (AS).
-        NFP (int): (Nominal) number of field periods for the device/concept
-        description (str): description of the device/concept
-        stell_sym (bool): (Nominal) stellarator symmetry of the device
-            (stellarator symmetry defined as R(theta, zeta) = R(-theta,-zeta)
-            and Z(theta, zeta) = -Z(-theta,-zeta))
-        deviceid (str): unique identifier for this device
-
-    Returns
-    -------
-        None
-    """
-    # data dicts for each table
-    devices_and_concepts = {}
-
-    devices_csv_name = "devices_and_concepts.csv"
-
-    devices_and_concepts["name"] = name
-    devices_and_concepts["class"] = device_class
-
-    devices_and_concepts["NFP"] = NFP
-    devices_and_concepts["stell_sym"] = bool(stell_sym)
-
-    devices_and_concepts["description"] = description
-    devices_and_concepts["deviceid"] = deviceid
-
-    csv_columns_runs = list(devices_and_concepts.keys())
-    csv_columns_runs.sort()
-    runs_csv_exists = os.path.isfile(devices_csv_name)
-
-    try:
-        with open(devices_csv_name, "a+") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=csv_columns_runs)
-            if not runs_csv_exists:
-                writer.writeheader()  # only need header if file did not exist already
-            writer.writerow(devices_and_concepts)
     except OSError:
         print("I/O error")
 

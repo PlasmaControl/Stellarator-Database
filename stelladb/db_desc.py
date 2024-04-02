@@ -1,20 +1,21 @@
 import os
-from desc.equilibrium import Equilibrium, EquilibriaFamily
-from desc.grid import LinearGrid
-from desc.vmec_utils import ptolemy_identity_rev, zernike_to_fourier
+import numpy as np
+import csv
 import zipfile
-import warnings
+from datetime import date
 
-from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+from desc.equilibrium import Equilibrium, EquilibriaFamily
+from desc.grid import LinearGrid
+from desc.vmec_utils import ptolemy_identity_rev, zernike_to_fourier
 from desc.io.hdf5_io import hdf5Reader
 from desc.io.equilibrium_io import load
-import numpy as np
-import csv
-from datetime import date
+
+from .getters import get_hash_config, get_driver, get_hash_desc
+from .device import device_or_concept_to_csv
 
 
 def save_to_db_desc(  # pragma: no cover
@@ -564,163 +565,4 @@ def desc_to_csv(  # noqa
     except OSError:
         print("I/O error")
 
-    return None
-
-
-def device_or_concept_to_csv(  # noqa
-    deviceid,
-    name=None,
-    device_class=None,
-    NFP=None,
-    description=None,
-    stell_sym=False,
-    user_created=None,
-    user_updated=None,
-):
-    """Save DESC as a csv with relevant information.
-
-    Args
-    ----
-        name : str
-            name of the device
-        device_class (str): 
-            class of device i.e. quasisymmetry (QA, QH, QP)
-            or omnigenity (QI, OT, OH) or axisymmetry (AS).
-        NFP : (int)
-            (Nominal) number of field periods for the device/concept
-        description : (str)
-            description of the device/concept
-        stell_sym : (bool)
-            (Nominal) stellarator symmetry of the device
-            (stellarator symmetry defined as R(theta, zeta) = R(-theta,-zeta)
-            and Z(theta, zeta) = -Z(-theta,-zeta))
-
-    Returns
-    -------
-        None
-    """
-    # data dicts for each table
-    devices_and_concepts = {}
-
-    devices_csv_name = "devices_and_concepts.csv"
-
-    devices_and_concepts["deviceid"] = deviceid
-    devices_and_concepts["name"] = name if name is not None else deviceid
-    devices_and_concepts["class"] = device_class
-
-    devices_and_concepts["NFP"] = NFP
-    devices_and_concepts["stell_sym"] = bool(stell_sym)
-
-    devices_and_concepts["description"] = description
-    if user_created is not None:
-        devices_and_concepts["user_created"] = user_created
-    if user_updated is not None:
-        devices_and_concepts["user_updated"] = user_updated
-
-    today = date.today()
-    devices_and_concepts["date_created"] = today
-    devices_and_concepts["date_updated"] = today
-
-    devices_and_concepts["hashkey"] = get_hash_device(devices_and_concepts)
-
-    csv_columns_desc_runs = list(devices_and_concepts.keys())
-    csv_columns_desc_runs.sort()
-    desc_runs_csv_exists = os.path.isfile(devices_csv_name)
-
-    try:
-        with open(devices_csv_name, "a+") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=csv_columns_desc_runs)
-            if not desc_runs_csv_exists:
-                writer.writeheader()  # only need header if file did not exist already
-            writer.writerow(devices_and_concepts)
-    except OSError:
-        print("I/O error")
-
-    return None
-
-
-def get_hash_desc(eq, data_desc_runs, config_hash):
-    """Get a unique identifier for a DESC equilibrium."""
-    if not isinstance(eq, Equilibrium):
-        warnings.warn(f"Expected type Equilibrium for eq, got type {type(eq)}")
-
-    unique_id = (
-        f"{eq.L}{eq.M}{eq.N}{eq.NFP}{config_hash}{data_desc_runs['current_profile']}"
-        + f"{data_desc_runs['iota_profile']}{data_desc_runs['pressure_profile']}{eq.params_dict}"
-    )
-
-    return hash(unique_id)
-
-
-def get_hash_config(data_configurations):
-    """Get a unique identifier for configuration."""
-
-    unique_id = ""
-    for key in data_configurations.keys():
-        if key not in [
-            "config_name",
-            "name",
-            "provenance",
-            "description",
-            "device_name",
-            "date_created",
-            "date_updated",
-            "user_created",
-            "user_updated",
-        ]:
-            unique_id += f"{data_configurations[key]}"
-
-    return hash(unique_id)
-
-
-def get_hash_device(devices_and_concepts):
-    """Get a unique identifier for configuration."""
-
-    unique_id = ""
-    for key in devices_and_concepts.keys():
-        if key not in [
-            "date_created",
-            "date_updated",
-            "user_created",
-            "user_updated",
-        ]:
-            unique_id += f"{devices_and_concepts[key]}"
-
-    return hash(unique_id)
-
-
-def get_driver():  # pragma: no cover
-    """Initialize a webdriver for use in uploading to the database."""
-
-    try:
-        options = webdriver.ChromeOptions()
-        options.headless = True
-        return webdriver.Chrome(options=options)
-    except:  # noqa: E722
-        pass
-
-    try:
-        options = webdriver.FirefoxOptions()
-        options.headless = True
-        return webdriver.Firefox(options=options)
-    except:  # noqa: E722
-        pass
-
-    try:
-        return webdriver.Safari()
-    except:  # noqa: E722
-        pass
-
-    try:
-        options = webdriver.EdgeOptions()
-        options.use_chromium = True
-        options.add_argument("headless")
-        return webdriver.Edge(options=options)
-    except:  # noqa: E722
-        warnings.warn(
-            "Failed to initialize any webdriver! Consider installing "
-            + "Chrome, Safari, Firefox, or Edge."
-        )
-
-    # If no browser was successfully initialized, return None
     return None
