@@ -273,7 +273,6 @@ def save_to_db_desc(  # pragma: no cover
 
 def desc_to_csv(  # noqa
     eq,
-    current=True,
     name=None,
     provenance=None,
     description=None,
@@ -292,9 +291,6 @@ def desc_to_csv(  # noqa
         eq : str, Equilibrium or EquilibriumFamily
             file path of the output file without .h5 extension
             or the equilibrium to be uploaded
-        current : bool
-            True if the equilibrium was solved with fixed current or not if False,
-            was solved with fixed iota
         name : str
             name of configuration (and desc run)
         provenance : str
@@ -397,7 +393,7 @@ def desc_to_csv(  # noqa
     rho_grid.nodes[0, 0] = 1e-12  # bc we dont have axis limit right now
     rho_grid_dense.nodes[0, 0] = 1e-12  # bc we dont have axis limit right now
 
-    if eq.iota and not current:
+    if eq.iota:
         data_desc_runs["iota_profile"] = eq.iota(rho)  # sohuld name differently
         data_desc_runs["iota_max"] = np.max(eq.iota(rho_dense))
 
@@ -408,7 +404,7 @@ def desc_to_csv(  # noqa
         )  # round to make sure any 0s are actually zero
         data_configurations["current_specification"] = "iota"
         data_desc_runs["current_specification"] = "iota"
-    elif eq.current and current:
+    elif eq.current:
         data_desc_runs["current_profile"] = eq.current(rho)
         data_desc_runs["iota_profile"] = round(
             eq.compute("iota", grid=rho_grid)["iota"], ndigits=14
