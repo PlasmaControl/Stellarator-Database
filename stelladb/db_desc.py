@@ -22,10 +22,11 @@ def save_to_db_desc(  # pragma: no cover
     eq,
     config_name,
     user,
-    isDeviceNew=False,
-    deviceid=None,
     description=None,
     provenance=None,
+    deviceid=None,
+    isDeviceNew=False,
+    inputfile=False,
     inputfilename=None,
     config_class=None,
     current=True,
@@ -44,18 +45,18 @@ def save_to_db_desc(  # pragma: no cover
         or the equilibrium to be uploaded
     config_name : str
         unique identifier for the configuration
-    initialization_method : str (Default: 'surface')
-        method used to initialize the equilibrium
     user : str
         user who created the equilibrium (must have an account on the database)
-    isDeviceNew : bool (Default: False)
-        True if the device is new and should be uploaded to the database
-    deviceid : str (Default: None)
-        unique identifier for the device
     description : str (Default: None)
         description of the configuration
     provenance : str (Default: None)
         where the configuration came from
+    deviceid : str (Default: None)
+        unique identifier for the device
+    isDeviceNew : bool (Default: False)
+        True if the device is new and should be uploaded to the database
+    inputfile : bool (Default: False)
+        True if the input file should be uploaded to the database
     inputfilename : str (Default: None)
         name of the input file corresponding to this configuration
     config_class : str (Default: None)
@@ -64,6 +65,8 @@ def save_to_db_desc(  # pragma: no cover
     current : bool (Default: True)
         True if the equilibrium was solved with fixed current or not if False,
         was solved with fixed iota
+    initialization_method : str (Default: 'surface')
+        method used to initialize the equilibrium
     deviceNFP : int (Default: 1)
         number of field periods for the device
     deviceDescription : str (Default: None)
@@ -74,11 +77,15 @@ def save_to_db_desc(  # pragma: no cover
         True if the zip and csv files should be kept after uploading
 
     """
-    zip_upload_button_id = "zipToUpload"
-    csv_upload_button_id = "descToUpload"
-    cfg_upload_button_id = "configToUpload"
-    device_upload_button_id = "deviceToUpload"
-    confirm_button_id = "confirmDesc"
+    if (
+        eq == ""
+        or eq is None
+        or config_name == ""
+        or config_name is None
+        or user == ""
+        or user is None
+    ):
+        raise ValueError("Please provide a valid input for eq, config_name, and user.")
 
     if isinstance(eq, str):
         if os.path.exists(eq + ".h5"):
@@ -90,7 +97,7 @@ def save_to_db_desc(  # pragma: no cover
         eq = eq
         filename = config_name
     elif isinstance(eq, EquilibriaFamily):
-        eq = eq
+        eq = eq[-1]
         filename = config_name
     else:
         raise TypeError(
@@ -102,7 +109,7 @@ def save_to_db_desc(  # pragma: no cover
         os.remove("auto_save.h5")
 
     # Check input files, if there isn't any create automatically
-    if inputfilename is None:
+    if inputfilename is None and inputfile:
         if os.path.exists("auto_generated_" + filename + "_input.txt"):
             inputfilename = "auto_generated_" + filename + "_input.txt"
         elif os.path.exists(filename + "_input.txt"):
@@ -121,6 +128,8 @@ def save_to_db_desc(  # pragma: no cover
             elif isinstance(eq, EquilibriaFamily):
                 eq[-1].save("auto_save.h5")
                 writer.desc_output_to_input(inputfilename, "auto_save.h5")
+    elif inputfilename is not None and os.path.exists(inputfilename) and not inputfile:
+        inputfile = True
 
     # Zip the files
     print("Zipping files...")
@@ -138,7 +147,7 @@ def save_to_db_desc(  # pragma: no cover
             if not os.path.exists("auto_save.h5"):
                 eq[-1].save("auto_save.h5")
             zipf.write("auto_save.h5")
-        if inputfilename is not None:
+        if inputfilename is not None and inputfile:
             if os.path.exists(inputfilename):
                 zipf.write(inputfilename)
 
@@ -196,6 +205,12 @@ def save_to_db_desc(  # pragma: no cover
                 + "deviceNFP, and device_stell_sym must be provided."
             )
 
+    zip_upload_button_id = "zipToUpload"
+    csv_upload_button_id = "descToUpload"
+    cfg_upload_button_id = "configToUpload"
+    device_upload_button_id = "deviceToUpload"
+    confirm_button_id = "confirmDesc"
+
     print("Uploading to database...\n")
     driver = get_driver()
     driver.get("https://ye2698.mycpanel.princeton.edu/import-page/")
@@ -250,14 +265,13 @@ def save_to_db_desc(  # pragma: no cover
 
     finally:
         # Clean up resources
-        # driver.quit()
+        driver.quit()
         if os.path.exists("auto_save.h5"):
             os.remove("auto_save.h5")
         if not copy:
             os.remove(zip_filename)
             os.remove(csv_filename)
             os.remove(config_csv_filename)
-            os.remove(inputfilename)
             if isDeviceNew:
                 os.remove(device_csv_filename)
 
@@ -328,7 +342,9 @@ def desc_to_csv(  # noqa
         data_desc_runs["outputfile"] = os.path.basename(eq)
         reader = hdf5Reader(eq)
         version = reader.read_dict()["__version__"]
-        eq = load(eq)[-1]
+        eq = load(eq)
+        if isinstance(eq, EquilibriaFamily):
+            eq = eq[-1]
     elif isinstance(eq, Equilibrium):
         import desc
 
@@ -537,8 +553,6 @@ def desc_to_csv(  # noqa
     data_desc_runs["hashkey"] = get_hash_desc(
         eq, data_desc_runs, data_configurations["configid"]
     )
-    print(f"DESC Hash: {data_desc_runs["hashkey"]}")
-    print(f"Config Hash: {data_configurations["configid"]}")
 
     csv_columns_desc_runs = list(data_desc_runs.keys())
     csv_columns_desc_runs.sort()

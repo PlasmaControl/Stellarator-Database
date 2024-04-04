@@ -12,7 +12,7 @@ dist/
 *.pdf
 *.pyc
 .pymon
-*.ipynb
 *input.txt
 *.zip
 *.csv
+test_*
