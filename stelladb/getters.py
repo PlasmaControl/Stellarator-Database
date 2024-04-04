@@ -72,34 +72,36 @@ def get_hash_device(devices_and_concepts):
     return hash(unique_id)
 
 
-def get_driver():  # pragma: no cover
+def get_driver():
     """Initialize a webdriver for use in uploading to the database."""
 
     try:
         options = webdriver.ChromeOptions()
-        options.headless = True
+        options.add_argument("--headless")
         return webdriver.Chrome(options=options)
-    except:  # noqa: E722
+    except:
         pass
 
     try:
         options = webdriver.FirefoxOptions()
-        options.headless = True
+        options.add_argument("--headless")
         return webdriver.Firefox(options=options)
-    except:  # noqa: E722
+    except:
         pass
 
     try:
-        return webdriver.Safari()
-    except:  # noqa: E722
+        options = webdriver.SafariOptions()
+        options.add_argument("--headless")
+        return webdriver.Safari(options=options)
+    except:
         pass
 
     try:
         options = webdriver.EdgeOptions()
         options.use_chromium = True
-        options.add_argument("headless")
+        options.add_argument("--headless")
         return webdriver.Edge(options=options)
-    except:  # noqa: E722
+    except:
         warnings.warn(
             "Failed to initialize any webdriver! Consider installing "
             + "Chrome, Safari, Firefox, or Edge."
