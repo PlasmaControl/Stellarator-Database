@@ -4,9 +4,11 @@ Includes the functions required to upload DESC or VMEC results to the stellarato
 This is still a work in progress.
 
 ## Install using pip
+If you are on Linux, WSL or MacOS, you should be able to install `stelladb` directly from PyPi.
 ```bash
 pip install stelladb
 ```
+You may have difficulty installing on Windows due to `simsopt` dependency. More detailed instructions will come for that. For now, you can use the repo on Windows with slight difference on building the environment.
 
 ## Install using GIT
 
@@ -24,6 +26,13 @@ cd Stellarator-Database
 conda create --name db 'python>=3.9, <=3.12'
 conda activate db
 pip install -r requirements.txt
+```
+
+If you are on Windows, `simsopt` might need additional instructions. If you just want to upload DESC results, follow these steps for creating conda environment,
+```bash
+conda create --name db 'python>=3.9, <=3.12'
+conda activate db
+pip install desc-opt selenium
 ```
 
 ## Sample usage
