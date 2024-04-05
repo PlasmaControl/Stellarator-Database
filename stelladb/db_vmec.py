@@ -24,6 +24,7 @@ from .device import device_or_concept_to_csv
 
 
 def save_to_db_vmec():
+    print("This function is not yet implemented.")
     return None
 
 

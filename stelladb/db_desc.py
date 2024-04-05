@@ -108,15 +108,18 @@ def save_to_db_desc(  # pragma: no cover
         print("Removing auto_save.h5")
         os.remove("auto_save.h5")
 
+    auto_input = False
     # Check input files, if there isn't any create automatically
     if inputfilename is None and inputfile:
-        if os.path.exists("auto_generated_" + filename + "_input.txt"):
-            inputfilename = "auto_generated_" + filename + "_input.txt"
-        elif os.path.exists(filename + "_input.txt"):
+        if os.path.exists(filename + "_input.txt"):
+            print(
+                f"Found an input file with name {filename}_input.txt and using that ..."
+            )
             inputfilename = filename + "_input.txt"
         else:
             inputfilename = "auto_generated_" + filename + "_input.txt"
             from desc.input_reader import InputReader
+            auto_input = True
 
             print("Auto-generating input file...")
             writer = InputReader()
@@ -274,6 +277,8 @@ def save_to_db_desc(  # pragma: no cover
             os.remove(config_csv_filename)
             if isDeviceNew:
                 os.remove(device_csv_filename)
+            if auto_input:
+                os.remove(inputfilename)
 
 
 def desc_to_csv(  # noqa

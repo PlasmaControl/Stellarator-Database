@@ -18,6 +18,8 @@ def device_or_concept_to_csv(  # noqa
 
     Args
     ----
+        deviceid : str
+            short name of the device
         name : str
             name of the device
         device_class (str):
