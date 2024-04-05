@@ -27,6 +27,9 @@ pip install -r requirements.txt
 ```
 
 ## Sample usage
+
+For more detailed explanation, refer to the `tutorial.ipynb` notebook in the [repo](https://github.com/PlasmaControl/Stellarator-Database.git).
+
 ```python
 from desc.examples import get
 from stelladb import save_to_db_desc
