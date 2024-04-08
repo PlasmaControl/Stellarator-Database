@@ -34,6 +34,7 @@ conda create --name db 'python>=3.9, <=3.12'
 conda activate db
 pip install desc-opt selenium
 ```
+Then, you can upload to database inside the repo, or anywhere where you can access the module `stelladb`.
 
 ## Sample usage
 
