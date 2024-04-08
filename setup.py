@@ -30,7 +30,7 @@ setup(
     keywords="stellarator tokamak equilibrium perturbation mhd "
     + "magnetohydrodynamics stability confinement plasma physics "
     + "optimization design fusion data database",
-    packages=find_packages(),
+    packages=find_packages(exclude=["tutorials"]),
     include_package_data=True,
     install_requires=requirements,
     python_requires=">=3.9",

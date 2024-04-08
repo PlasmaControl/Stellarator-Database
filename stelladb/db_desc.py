@@ -430,8 +430,8 @@ def desc_to_csv(
         data_configurations["current_specification"] = "net enclosed current"
         data_desc_runs["current_specification"] = "net enclosed current"
 
-    rho_mercier = np.linspace(1e-3, 1.0, 11, endpoint=True)
-    rho_grid_mercier = LinearGrid(rho=rho_mercier, M=0, N=0, NFP=eq.NFP)
+    rho_mercier = np.linspace(0.1, 1.0, 11, endpoint=True)
+    rho_grid_mercier = LinearGrid(rho=rho_mercier, M=2 * eq.M, N=0, NFP=eq.NFP)
     Dmerc = eq.compute("D_Mercier", grid=rho_grid_mercier)["D_Mercier"]
     data_desc_runs["D_Mercier_max"] = np.max(Dmerc)
     data_desc_runs["D_Mercier_min"] = np.min(Dmerc)
