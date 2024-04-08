@@ -14,7 +14,7 @@ from desc.vmec_utils import ptolemy_identity_rev, zernike_to_fourier
 from desc.io.hdf5_io import hdf5Reader
 from desc.io.equilibrium_io import load
 
-from .getters import get_hash_config, get_driver, get_hash_desc
+from .getters import get_driver
 from .device import device_or_concept_to_csv
 
 
@@ -553,11 +553,6 @@ def desc_to_csv(  # noqa
         data_configurations["user_created"] = user_created
     if user_updated is not None:
         data_configurations["user_updated"] = user_updated
-
-    data_configurations["configid"] = get_hash_config(data_configurations)
-    data_desc_runs["hashkey"] = get_hash_desc(
-        eq, data_desc_runs, data_configurations["configid"]
-    )
 
     csv_columns_desc_runs = list(data_desc_runs.keys())
     csv_columns_desc_runs.sort()

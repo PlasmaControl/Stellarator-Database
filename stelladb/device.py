@@ -1,7 +1,6 @@
 import csv
 import os
 from datetime import date
-from .getters import get_hash_device
 
 
 def device_or_concept_to_csv(  # noqa
@@ -59,8 +58,6 @@ def device_or_concept_to_csv(  # noqa
     today = date.today()
     devices_and_concepts["date_created"] = today
     devices_and_concepts["date_updated"] = today
-
-    devices_and_concepts["hashkey"] = get_hash_device(devices_and_concepts)
 
     csv_columns_desc_runs = list(devices_and_concepts.keys())
     csv_columns_desc_runs.sort()
