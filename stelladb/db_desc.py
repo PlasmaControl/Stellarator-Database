@@ -18,7 +18,7 @@ from .getters import get_driver
 from .device import device_or_concept_to_csv
 
 
-def save_to_db_desc(  # pragma: no cover
+def save_to_db_desc(
     eq,
     config_name,
     user,
@@ -281,7 +281,7 @@ def save_to_db_desc(  # pragma: no cover
                 os.remove(inputfilename)
 
 
-def desc_to_csv(  # noqa
+def desc_to_csv(
     eq,
     name=None,
     provenance=None,
@@ -429,7 +429,10 @@ def desc_to_csv(  # noqa
         )
         data_configurations["current_specification"] = "net enclosed current"
         data_desc_runs["current_specification"] = "net enclosed current"
-    Dmerc = eq.compute("D_Mercier", grid=rho_grid)["D_Mercier"]
+
+    rho_mercier = np.linspace(1e-3, 1.0, 11, endpoint=True)
+    rho_grid_mercier = LinearGrid(rho=rho_mercier, M=0, N=0, NFP=eq.NFP)
+    Dmerc = eq.compute("D_Mercier", grid=rho_grid_mercier)["D_Mercier"]
     data_desc_runs["D_Mercier_max"] = np.max(Dmerc)
     data_desc_runs["D_Mercier_min"] = np.min(Dmerc)
     data_desc_runs["D_Mercier"] = Dmerc

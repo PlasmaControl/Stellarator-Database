@@ -3,7 +3,7 @@ import os
 from datetime import date
 
 
-def device_or_concept_to_csv(  # noqa
+def device_or_concept_to_csv(
     deviceid,
     name=None,
     device_class=None,
