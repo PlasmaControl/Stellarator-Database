@@ -25,7 +25,7 @@ for file_name in os.listdir(folder_path):
         config_name = file_name_without_extension.replace("_output", "")
         # upload to the equilibrium to database
         save_to_db_desc(
-            os.path.abspath(folder_path) + "/" + file_name_without_extension,
+            os.path.join(folder_path, file_name_without_extension),
             config_name=config_name,
             user="some-user-id",
             description="Upload multiple files tutorial",
