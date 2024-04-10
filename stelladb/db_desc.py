@@ -29,7 +29,6 @@ def save_to_db_desc(
     inputfile=False,
     inputfilename=None,
     config_class=None,
-    current=True,
     initialization_method="surface",
     deviceNFP=1,
     deviceDescription=None,
@@ -62,9 +61,6 @@ def save_to_db_desc(
     config_class : str (Default: None)
         class of configuration i.e. quasisymmetry (QA, QH, QP)
         or omnigenity (QI, OT, OH) or axisymmetry (AS)
-    current : bool (Default: True)
-        True if the equilibrium was solved with fixed current or not if False,
-        was solved with fixed iota
     initialization_method : str (Default: 'surface')
         method used to initialize the equilibrium
     deviceNFP : int (Default: 1)
@@ -169,12 +165,11 @@ def save_to_db_desc(
 
     print("Creating desc_runs.csv and configurations.csv...")
     desc_to_csv(
-        eq, 
-        name=config_name, 
+        eq,
+        name=config_name,
         provenance=provenance,
         description=description,
         inputfilename=inputfilename,
-        current=current,
         deviceid=deviceid,
         config_class=config_class,
         user_updated=user,
