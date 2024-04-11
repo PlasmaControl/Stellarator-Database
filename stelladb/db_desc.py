@@ -207,7 +207,9 @@ def save_to_db_desc(
     import matplotlib.pyplot as plt
 
     if isinstance(eq, str):
-        eq = load(eq)[-1]
+        eq = load(eq)
+        if isinstance(eq, EquilibriaFamily):
+            eq = eq[-1]
     print("Plotting/saving surface and Boozer plots...")
     surface_filename = filename + "_surface.webp"
     boozer_filename = filename + "_boozer.webp"
@@ -215,6 +217,7 @@ def save_to_db_desc(
     plt.savefig(surface_filename, dpi=90)
     plot_boozer_surface(eq)
     plt.savefig(boozer_filename, dpi=90)
+    plt.close()
 
     zip_upload_button_id = "zipToUpload"
     csv_upload_button_id = "descToUpload"
