@@ -203,10 +203,25 @@ def save_to_db_desc(
                 + "deviceNFP, and device_stell_sym must be provided."
             )
 
+    from desc.plotting import plot_comparison, plot_boozer_surface
+    import matplotlib.pyplot as plt
+
+    if isinstance(eq, str):
+        eq = load(eq)[-1]
+    print("Plotting/saving surface and Boozer plots...")
+    surface_filename = filename + "_surface.webp"
+    boozer_filename = filename + "_boozer.webp"
+    plot_comparison(eqs=[eq], labels=[f"{config_name}"])
+    plt.savefig(surface_filename, dpi=90)
+    plot_boozer_surface(eq)
+    plt.savefig(boozer_filename, dpi=90)
+
     zip_upload_button_id = "zipToUpload"
     csv_upload_button_id = "descToUpload"
     cfg_upload_button_id = "configToUpload"
     device_upload_button_id = "deviceToUpload"
+    surface_upload_button_id = "surfaceToUpload"
+    boozer_upload_button_id = "boozerToUpload"
     confirm_button_id = "confirmDesc"
 
     print("Uploading to database...\n")
@@ -231,6 +246,18 @@ def save_to_db_desc(
             EC.presence_of_element_located((By.ID, cfg_upload_button_id))
         )
         file_input3.send_keys(os.path.abspath(config_csv_filename))
+
+        # Upload the webp file for surface plot
+        file_input4 = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, surface_upload_button_id))
+        )
+        file_input4.send_keys(os.path.abspath(surface_filename))
+
+        # Upload the webp file for Boozer plot
+        file_input5 = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, boozer_upload_button_id))
+        )
+        file_input5.send_keys(os.path.abspath(boozer_filename))
 
         # Upload the csv file if the device is new
         if isDeviceNew:
@@ -270,6 +297,8 @@ def save_to_db_desc(
             os.remove(zip_filename)
             os.remove(csv_filename)
             os.remove(config_csv_filename)
+            os.remove(surface_filename)
+            os.remove(boozer_filename)
             if isDeviceNew:
                 os.remove(device_csv_filename)
             if auto_input:
