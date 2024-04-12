@@ -16,3 +16,4 @@ dist/
 *.zip
 *.csv
 test_*
+*.html

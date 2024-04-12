@@ -230,7 +230,7 @@ def save_to_db_desc(
         grid3d = LinearGrid(
             rho=1.0,
             theta=np.linspace(0, 2 * np.pi, 30),
-            zeta=np.linspace(0, 2 * np.pi, max(30, int(10 * eq.NFP))),
+            zeta=np.linspace(0, 2 * np.pi, max(140, int(20 * eq.NFP))),
         )
         # Update layout to adjust the size of the plot
         plot_3d(eq, "|B|", fig=fig, grid=grid3d)
@@ -238,7 +238,7 @@ def save_to_db_desc(
             width=900,  # Set the width of the plot
             height=600,  # Set the height of the plot
         )
-        fig.write_html(d3_filename)
+        fig.write_html(d3_filename, include_plotlyjs="cdn")
 
     zip_upload_button_id = "zipToUpload"
     csv_upload_button_id = "descToUpload"
