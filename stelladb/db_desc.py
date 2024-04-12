@@ -22,6 +22,7 @@ def save_to_db_desc(
     eq,
     config_name,
     user,
+    uploadPlots=False,
     description=None,
     provenance=None,
     deviceid=None,
@@ -46,6 +47,9 @@ def save_to_db_desc(
         unique identifier for the configuration
     user : str
         user who created the equilibrium (must have an account on the database)
+    uploadPlots : bool (Default: False)
+        True if the plots should be uploaded to the database. This can significantly slow
+        down the uploading process depending on your hardware.
     description : str (Default: None)
         description of the configuration
     provenance : str (Default: None)
@@ -203,21 +207,38 @@ def save_to_db_desc(
                 + "deviceNFP, and device_stell_sym must be provided."
             )
 
-    from desc.plotting import plot_comparison, plot_boozer_surface
-    import matplotlib.pyplot as plt
+    if uploadPlots:
+        from desc.plotting import plot_comparison, plot_boozer_surface, plot_3d
+        import matplotlib.pyplot as plt
+        import plotly.graph_objects as go
 
-    if isinstance(eq, str):
-        eq = load(eq)
-        if isinstance(eq, EquilibriaFamily):
-            eq = eq[-1]
-    print("Plotting/saving surface and Boozer plots...")
-    surface_filename = filename + "_surface.webp"
-    boozer_filename = filename + "_boozer.webp"
-    plot_comparison(eqs=[eq], labels=[f"{config_name}"])
-    plt.savefig(surface_filename, dpi=90)
-    plot_boozer_surface(eq)
-    plt.savefig(boozer_filename, dpi=90)
-    plt.close()
+        if isinstance(eq, str):
+            eq = load(eq)
+            if isinstance(eq, EquilibriaFamily):
+                eq = eq[-1]
+        print("Plotting/saving surface, Boozer and 3D plots...")
+        surface_filename = filename + "_surface.webp"
+        boozer_filename = filename + "_boozer.webp"
+        d3_filename = filename + "_3d.html"
+        plot_comparison(eqs=[eq], labels=[f"{config_name}"])
+        plt.savefig(surface_filename, dpi=90)
+        plot_boozer_surface(eq)
+        plt.savefig(boozer_filename, dpi=90)
+        plt.close()
+
+        fig = go.Figure()
+        grid3d = LinearGrid(
+            rho=1.0,
+            theta=np.linspace(0, 2 * np.pi, 30),
+            zeta=np.linspace(0, 2 * np.pi, max(30, int(10 * eq.NFP))),
+        )
+        # Update layout to adjust the size of the plot
+        plot_3d(eq, "|B|", fig=fig, grid=grid3d)
+        fig.update_layout(
+            width=900,  # Set the width of the plot
+            height=600,  # Set the height of the plot
+        )
+        fig.write_html(d3_filename)
 
     zip_upload_button_id = "zipToUpload"
     csv_upload_button_id = "descToUpload"
@@ -225,6 +246,7 @@ def save_to_db_desc(
     device_upload_button_id = "deviceToUpload"
     surface_upload_button_id = "surfaceToUpload"
     boozer_upload_button_id = "boozerToUpload"
+    plot3d_upload_button_id = "plot3dToUpload"
     confirm_button_id = "confirmDesc"
 
     print("Uploading to database...\n")
@@ -250,17 +272,24 @@ def save_to_db_desc(
         )
         file_input3.send_keys(os.path.abspath(config_csv_filename))
 
-        # Upload the webp file for surface plot
-        file_input4 = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, surface_upload_button_id))
-        )
-        file_input4.send_keys(os.path.abspath(surface_filename))
+        if uploadPlots:
+            # Upload the webp file for surface plot
+            file_input4 = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, surface_upload_button_id))
+            )
+            file_input4.send_keys(os.path.abspath(surface_filename))
 
-        # Upload the webp file for Boozer plot
-        file_input5 = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, boozer_upload_button_id))
-        )
-        file_input5.send_keys(os.path.abspath(boozer_filename))
+            # Upload the webp file for Boozer plot
+            file_input5 = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, boozer_upload_button_id))
+            )
+            file_input5.send_keys(os.path.abspath(boozer_filename))
+
+            # Upload the webp file for Boozer plot
+            file_input6 = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, plot3d_upload_button_id))
+            )
+            file_input6.send_keys(os.path.abspath(d3_filename))
 
         # Upload the csv file if the device is new
         if isDeviceNew:
@@ -300,12 +329,14 @@ def save_to_db_desc(
             os.remove(zip_filename)
             os.remove(csv_filename)
             os.remove(config_csv_filename)
-            os.remove(surface_filename)
-            os.remove(boozer_filename)
             if isDeviceNew:
                 os.remove(device_csv_filename)
             if auto_input:
                 os.remove(inputfilename)
+            if uploadPlots:
+                os.remove(d3_filename)
+                os.remove(surface_filename)
+                os.remove(boozer_filename)
 
 
 def desc_to_csv(
@@ -458,7 +489,7 @@ def desc_to_csv(
         data_desc_runs["current_specification"] = "net enclosed current"
 
     rho_mercier = np.linspace(0.1, 1.0, 11, endpoint=True)
-    rho_grid_mercier = LinearGrid(rho=rho_mercier, M=2 * eq.M, N=0, NFP=eq.NFP)
+    rho_grid_mercier = LinearGrid(rho=rho_mercier, M=0, N=0, NFP=eq.NFP)
     Dmerc = eq.compute("D_Mercier", grid=rho_grid_mercier)["D_Mercier"]
     data_desc_runs["D_Mercier_max"] = np.max(Dmerc)
     data_desc_runs["D_Mercier_min"] = np.min(Dmerc)
