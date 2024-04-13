@@ -233,12 +233,15 @@ def save_to_db_desc(
             zeta=np.linspace(0, 2 * np.pi, max(140, int(20 * eq.NFP))),
         )
         # Update layout to adjust the size of the plot
-        plot_3d(eq, "|B|", fig=fig, grid=grid3d)
+        # Update layout to adjust the size of the plot
+        plot_3d(eq, "|B|", fig=fig, grid=grid3d, cmap="plasma")
         fig.update_layout(
             width=900,  # Set the width of the plot
             height=600,  # Set the height of the plot
+            margin=dict(l=0, r=0, t=0, b=0), # Set margins (left, right, top, bottom)
+            paper_bgcolor='rgb(0, 0, 0)',  # Set background color
         )
-        fig.write_html(d3_filename, include_plotlyjs="cdn")
+        fig.write_html(d3_filename, include_plotlyjs=False, full_html=False, div_id='plot3d')
 
     zip_upload_button_id = "zipToUpload"
     csv_upload_button_id = "descToUpload"
