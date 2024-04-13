@@ -251,7 +251,7 @@ def save_to_db_desc(
 
     print("Uploading to database...\n")
     driver = get_driver()
-    driver.get("https://ye2698.mycpanel.princeton.edu/import-page/")
+    driver.get("https://ye2698.mycpanel.princeton.edu/upload-page/")
 
     try:
         # Upload the zip file
