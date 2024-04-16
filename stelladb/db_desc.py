@@ -208,7 +208,7 @@ def save_to_db_desc(
             )
 
     if uploadPlots:
-        from desc.plotting import plot_comparison, plot_boozer_surface, plot_3d
+        from desc.plotting import plot_surfaces, plot_boozer_surface, plot_3d
         import matplotlib.pyplot as plt
         import plotly.graph_objects as go
 
@@ -220,7 +220,7 @@ def save_to_db_desc(
         surface_filename = filename + "_surface.webp"
         boozer_filename = filename + "_boozer.webp"
         d3_filename = filename + "_3d.html"
-        plot_comparison(eqs=[eq], labels=[f"{config_name}"])
+        plot_surfaces(eq=eq, label=f"{config_name}")
         plt.savefig(surface_filename, dpi=90)
         plot_boozer_surface(eq)
         plt.savefig(boozer_filename, dpi=90)
