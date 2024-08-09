@@ -2,11 +2,13 @@ import os
 import numpy as np
 import csv
 import zipfile
+import time
 from datetime import date
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import TimeoutException
 
 from desc.equilibrium import Equilibrium, EquilibriaFamily
 from desc.grid import LinearGrid
@@ -14,7 +16,7 @@ from desc.vmec_utils import ptolemy_identity_rev, zernike_to_fourier
 from desc.io.hdf5_io import hdf5Reader
 from desc.io.equilibrium_io import load
 
-from .getters import get_driver
+from .getters import get_driver, get_file_in_directory
 from .device import device_or_concept_to_csv
 
 
@@ -642,5 +644,128 @@ def desc_to_csv(
             writer.writerow(data_configurations)
     except OSError:
         print("I/O error")
+
+    return None
+
+
+def get_desc_by_id(id, move_to_current_dir=False, download_dir=None, delete_zip=False):
+    """Get a DESC equilibrium by its id from the database.
+
+    Parameters
+    ----------
+    id : str
+        id of the equilibrium
+
+    Returns
+    -------
+    Equilibrium
+        the equilibrium corresponding to the id
+
+    """
+    table_button_id = "qtable"
+    constraint_name_button_id = "qfin"
+    constraint_value_button_id = "qthr"
+    output_button_id = "qfout"
+    query_button_id = "submit"
+    download_button_name = "download-button-each"
+
+    print("Searching in the database...\n")
+    driver = get_driver()
+    driver.get("https://ye2698.mycpanel.princeton.edu/query-page/")
+
+    try:
+        timeout = 2
+        # Select desc_runs table
+        table_button = WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.ID, table_button_id))
+        )
+        table_button.send_keys("desc_runs")  # Select the table by typing its name
+
+        time.sleep(0.5)  # Wait for the table to load available options
+
+        # Select the 'descrunid' in constraint name
+        constraint_name_button = WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.ID, constraint_name_button_id))
+        )
+        constraint_name_button.send_keys("descrunid")
+
+        # Enter the constraint value (You can change this to whatever value you need)
+        constraint_value_button = WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.ID, constraint_value_button_id))
+        )
+        constraint_value_button.send_keys(
+            f"={id}"
+        )  # Replace with the actual value you want to use
+
+        # Select the 'descrunid' in constraint name
+        output_name_button = WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.ID, output_button_id))
+        )
+        output_name_button.send_keys("desc_runs->descrunid")
+
+        # Click the query button
+        query_button = WebDriverWait(driver, timeout).until(
+            EC.element_to_be_clickable((By.ID, query_button_id))
+        )
+        query_button.click()
+
+        print("Query submitted successfully!")
+
+        # Wait for the table and download button to appear within the <td> element
+        try:
+            download_button = WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located((By.NAME, download_button_name))
+            )
+            # Click the download button to download the zip file
+            download_button.click()
+        except TimeoutException:
+            print(
+                f"Error: The download button did not appear within {timeout} seconds. Most "
+                f"likely, the id {id} does not exist in the database."
+            )
+            return None
+
+        # Wait for the download to complete (you can adjust the wait time if necessary)
+        time.sleep(1)  # Adjust the time based on the file size and download speed
+
+        # Get the directory of the current Python file
+        current_directory = os.getcwd()
+
+        if download_dir is None:
+            download_dir = os.path.expanduser("~") + "/Downloads/"
+
+        full_filename, filename = get_file_in_directory(
+            download_dir, f"desc_{id}_", ".zip"
+        )
+        if move_to_current_dir:
+            import shutil
+
+            if full_filename is not None:
+                try:
+                    shutil.move(full_filename, current_directory)
+                    print(
+                        "File moved to " + current_directory + " from " + download_dir
+                    )
+                except Exception as e:
+                    print(f"An error occurred: {e}")
+                    return None
+            else:
+                print("No file found in the download directory.")
+                return None
+
+        # Extract the zip file
+        with zipfile.ZipFile(filename, "r") as zip_ref:
+            zip_ref.extractall()
+            print(f"Extracted all files to {current_directory}")
+
+        if delete_zip:
+            os.remove(filename)
+            print(f"Deleted {filename}")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    finally:
+        driver.quit()
 
     return None

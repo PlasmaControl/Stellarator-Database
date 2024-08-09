@@ -1,3 +1,4 @@
+import os
 import warnings
 from selenium import webdriver
 from desc.equilibrium import Equilibrium
@@ -109,3 +110,15 @@ def get_driver():
 
     # If no browser was successfully initialized, return None
     return None
+
+
+def get_file_in_directory(directory, prefix, suffix):
+    # List all files in the given directory
+    for file_name in os.listdir(directory):
+        # Check if the file name starts with the given prefix and ends with the given suffix
+        if file_name.startswith(prefix) and file_name.endswith(suffix):
+            return (
+                os.path.join(directory, file_name),
+                file_name,
+            )  # Return the full path to the file
+    return None  # Return None if no matching file is found
