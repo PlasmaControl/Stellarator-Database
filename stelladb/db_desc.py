@@ -672,10 +672,10 @@ def get_desc_by_id(
     Examples
     --------
     >>> from stelladb.db_desc import get_desc_by_id
-    >>> names = get_desc_by_id(321, delete_zip=True, return_names=True)
     >>> from desc.plotting import plot_surfaces
     >>> from desc.equilibrium import Equilibrium
 
+    >>> names = get_desc_by_id(321, delete_zip=True, return_names=True)
     >>> eq = Equilibrium.load(names[0])[-1]
     >>> plot_surfaces(eq);
 
