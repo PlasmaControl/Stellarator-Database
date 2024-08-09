@@ -430,6 +430,37 @@ def desc_to_csv(
             + f"for eq, got type {type(eq)}"
         )
 
+    ### Compute Required Data ###
+    rho = np.linspace(0, 1.0, 11, endpoint=True)
+    rho_grid = LinearGrid(rho=rho, M=0, N=0, NFP=eq.NFP)
+    rho_dense = np.linspace(0, 1.0, 101, endpoint=True)
+    rho_grid_dense = LinearGrid(rho=rho_dense, M=0, N=0, NFP=eq.NFP)
+
+    rho_grid.nodes[0, 0] = 1e-12  # bc we dont have axis limit right now
+    rho_grid_dense.nodes[0, 0] = 1e-12  # bc we dont have axis limit right now
+
+    keys = [
+        "R0/a",
+        "a",
+        "R0",
+        "V",
+        "<|B|>_vol",
+        "<beta>_vol",
+        "current",
+        "R",
+        "Z",
+        "a_major/a_minor",
+    ]
+    data_keys = eq.compute(keys)
+
+    keys_rho = [
+        "current",
+        "iota",
+    ]
+    data_rho = eq.compute(keys_rho, grid=rho_grid)
+
+    data_iota_dense = eq.compute("iota", grid=rho_grid_dense)["iota"]
+
     ############ DESC_runs Data Table ############
     if name is not None:
         data_desc_runs["config_name"] = name
@@ -459,15 +490,6 @@ def desc_to_csv(
 
     # save profiles
 
-    rho = np.linspace(0, 1.0, 11, endpoint=True)
-    rho_grid = LinearGrid(rho=rho, M=0, N=0, NFP=eq.NFP)
-    data_desc_runs["profile_rho"] = rho
-    rho_dense = np.linspace(0, 1.0, 101, endpoint=True)
-    rho_grid_dense = LinearGrid(rho=rho_dense, M=0, N=0, NFP=eq.NFP)
-
-    rho_grid.nodes[0, 0] = 1e-12  # bc we dont have axis limit right now
-    rho_grid_dense.nodes[0, 0] = 1e-12  # bc we dont have axis limit right now
-
     if eq.iota:
         data_desc_runs["iota_profile"] = eq.iota(rho)  # sohuld name differently
         data_desc_runs["iota_max"] = np.max(eq.iota(rho_dense))
@@ -475,23 +497,19 @@ def desc_to_csv(
         data_desc_runs["iota_min"] = np.min(eq.iota(rho_dense))
 
         data_desc_runs["current_profile"] = round(
-            eq.compute("current", grid=rho_grid)["current"], ndigits=14
+            data_rho["current"], ndigits=14
         )  # round to make sure any 0s are actually zero
         data_configurations["current_specification"] = "iota"
         data_desc_runs["current_specification"] = "iota"
     elif eq.current:
         data_desc_runs["current_profile"] = eq.current(rho)
-        data_desc_runs["iota_profile"] = round(
-            eq.compute("iota", grid=rho_grid)["iota"], ndigits=14
-        )
-        data_desc_runs["iota_max"] = np.max(
-            eq.compute("iota", grid=rho_grid_dense)["iota"]
-        )
-        data_desc_runs["iota_min"] = np.min(
-            eq.compute("iota", grid=rho_grid_dense)["iota"]
-        )
+        data_desc_runs["iota_profile"] = round(data_rho["iota"], ndigits=14)
+        data_desc_runs["iota_max"] = np.max(data_iota_dense)
+        data_desc_runs["iota_min"] = np.min(data_iota_dense)
         data_configurations["current_specification"] = "net enclosed current"
         data_desc_runs["current_specification"] = "net enclosed current"
+
+    data_desc_runs["profile_rho"] = rho
 
     rho_mercier = np.linspace(0.1, 1.0, 11, endpoint=True)
     rho_grid_mercier = LinearGrid(rho=rho_mercier, M=0, N=0, NFP=eq.NFP)
@@ -500,7 +518,7 @@ def desc_to_csv(
     data_desc_runs["D_Mercier_min"] = np.min(Dmerc)
     data_desc_runs["D_Mercier"] = Dmerc
 
-    data_desc_runs["iota_min"] = np.min(eq.compute("iota", grid=rho_grid_dense)["iota"])
+    data_desc_runs["iota_min"] = np.min(data_iota_dense)
     data_desc_runs["pressure_profile"] = eq.pressure(rho)
     data_desc_runs["pressure_max"] = np.max(eq.pressure(rho_dense))
     data_desc_runs["pressure_min"] = np.min(eq.pressure(rho_dense))
@@ -528,24 +546,23 @@ def desc_to_csv(
         data_configurations["description"] = description
 
     data_configurations["toroidal_flux"] = eq.Psi
-    data_configurations["aspect_ratio"] = eq.compute("R0/a")["R0/a"]
-    data_configurations["minor_radius"] = eq.compute("a")["a"]
-    data_configurations["major_radius"] = eq.compute("R0")["R0"]
-    data_configurations["volume"] = eq.compute("V")["V"]
-    data_configurations["volume_averaged_B"] = eq.compute("<|B|>_vol")["<|B|>_vol"]
-    data_configurations["volume_averaged_beta"] = eq.compute("<beta>_vol")["<beta>_vol"]
+    data_configurations["aspect_ratio"] = data_keys["R0/a"]
+    data_configurations["minor_radius"] = data_keys["a"]
+    data_configurations["major_radius"] = data_keys["R0"]
+    data_configurations["volume"] = data_keys["V"]
+    data_configurations["volume_averaged_B"] = data_keys["<|B|>_vol"]
+    data_configurations["volume_averaged_beta"] = data_keys["<beta>_vol"]
     data_configurations["total_toroidal_current"] = float(
-        f'{eq.compute("current")["current"][-1]:1.2e}'
+        f'{data_keys["current"][-1]:1.2e}'
     )
-    position_data = eq.compute(["R", "Z", "a_major/a_minor"])
     data_configurations["R_excursion"] = float(
-        f'{np.max(position_data["R"])-np.min(position_data["R"]):1.4e}'
+        f'{np.max(data_keys["R"])-np.min(data_keys["R"]):1.4e}'
     )
     data_configurations["Z_excursion"] = float(
-        f'{np.max(position_data["Z"])-np.min(position_data["Z"]):1.4e}'
+        f'{np.max(data_keys["Z"])-np.min(data_keys["Z"]):1.4e}'
     )
     data_configurations["average_elongation"] = float(
-        f'{np.mean(position_data["a_major/a_minor"]):1.4e}'
+        f'{np.mean(data_keys["a_major/a_minor"]):1.4e}'
     )
     if kwargs.get("config_class", None) is not None:
         data_configurations["class"] = kwargs.get("config_class", None)
