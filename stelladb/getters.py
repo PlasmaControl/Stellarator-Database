@@ -113,9 +113,11 @@ def get_driver():
 
 
 def get_file_in_directory(directory, prefix, suffix):
+    """Get the first file in the given directory with the given prefix and suffix."""
     # List all files in the given directory
     for file_name in os.listdir(directory):
-        # Check if the file name starts with the given prefix and ends with the given suffix
+        # Check if the file name starts with the given prefix
+        # and ends with the given suffix
         if file_name.startswith(prefix) and file_name.endswith(suffix):
             return file_name  # Return the full path to the file
     return None  # Return None if no matching file is found

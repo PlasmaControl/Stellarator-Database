@@ -666,8 +666,18 @@ def get_desc_by_id(
 
     Returns
     -------
-    Equilibrium
-        the equilibrium corresponding to the id
+    names : list
+        List of the names of the extracted files
+
+    Examples
+    --------
+    >>> from stelladb.db_desc import get_desc_by_id
+    >>> names = get_desc_by_id(321, delete_zip=True, return_names=True)
+    >>> from desc.plotting import plot_surfaces
+    >>> from desc.equilibrium import Equilibrium
+
+    >>> eq = Equilibrium.load(names[0])[-1]
+    >>> plot_surfaces(eq);
 
     """
     table_button_id = "qtable"
