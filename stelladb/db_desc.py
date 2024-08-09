@@ -648,13 +648,21 @@ def desc_to_csv(
     return None
 
 
-def get_desc_by_id(id, move_to_current_dir=False, download_dir=None, delete_zip=False):
+def get_desc_by_id(
+    id,
+    delete_zip=False,
+    return_names=False,
+):
     """Get a DESC equilibrium by its id from the database.
 
     Parameters
     ----------
     id : str
         id of the equilibrium
+    delete_zip : bool (Default: False)
+        True if the zip file should be deleted after extracting the contents
+    return_names : bool (Default: False)
+        True if the names of the extracted files should be returned
 
     Returns
     -------
@@ -669,7 +677,7 @@ def get_desc_by_id(id, move_to_current_dir=False, download_dir=None, delete_zip=
     query_button_id = "submit"
     download_button_name = "download-button-each"
 
-    print("Searching in the database...\n")
+    print("Searching in the database...")
     driver = get_driver()
     driver.get("https://ye2698.mycpanel.princeton.edu/query-page/")
 
@@ -718,6 +726,7 @@ def get_desc_by_id(id, move_to_current_dir=False, download_dir=None, delete_zip=
             )
             # Click the download button to download the zip file
             download_button.click()
+            print("Download completed successfully!")
         except TimeoutException:
             print(
                 f"Error: The download button did not appear within {timeout} seconds. Most "
@@ -730,31 +739,11 @@ def get_desc_by_id(id, move_to_current_dir=False, download_dir=None, delete_zip=
 
         # Get the directory of the current Python file
         current_directory = os.getcwd()
-
-        if download_dir is None:
-            download_dir = os.path.expanduser("~") + "/Downloads/"
-
-        full_filename, filename = get_file_in_directory(
-            download_dir, f"desc_{id}_", ".zip"
-        )
-        if move_to_current_dir:
-            import shutil
-
-            if full_filename is not None:
-                try:
-                    shutil.move(full_filename, current_directory)
-                    print(
-                        "File moved to " + current_directory + " from " + download_dir
-                    )
-                except Exception as e:
-                    print(f"An error occurred: {e}")
-                    return None
-            else:
-                print("No file found in the download directory.")
-                return None
+        filename = get_file_in_directory(current_directory, f"desc_{id}_", ".zip")
 
         # Extract the zip file
         with zipfile.ZipFile(filename, "r") as zip_ref:
+            print(f"Extracting files: {zip_ref.namelist()}")
             zip_ref.extractall()
             print(f"Extracted all files to {current_directory}")
 
@@ -768,4 +757,7 @@ def get_desc_by_id(id, move_to_current_dir=False, download_dir=None, delete_zip=
     finally:
         driver.quit()
 
-    return None
+    if return_names:
+        return zip_ref.namelist()
+    else:
+        return None

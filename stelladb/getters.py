@@ -117,8 +117,5 @@ def get_file_in_directory(directory, prefix, suffix):
     for file_name in os.listdir(directory):
         # Check if the file name starts with the given prefix and ends with the given suffix
         if file_name.startswith(prefix) and file_name.endswith(suffix):
-            return (
-                os.path.join(directory, file_name),
-                file_name,
-            )  # Return the full path to the file
+            return file_name  # Return the full path to the file
     return None  # Return None if no matching file is found
