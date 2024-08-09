@@ -38,11 +38,12 @@ Then, you can upload to database inside the repo, or anywhere where you can acce
 
 ## Sample usage
 
-For more detailed explanation, refer to the `tutorial.ipynb` notebook in the [repo](https://github.com/PlasmaControl/Stellarator-Database.git).
+For more detailed explanation, refer to the notebooks in `tutorials` subfolder in the [repo](https://github.com/PlasmaControl/Stellarator-Database.git).
 
 ```python
 from desc.examples import get
-from stelladb import save_to_db_desc
+from desc.equilibrium import Equilibrium
+from stelladb import save_to_db_desc, get_desc_by_id
 
 eq = get("HELIOTRON")
 
@@ -59,6 +60,12 @@ save_to_db_desc("test_output_HELIOTRON", config_name="another-HELIOTRON", user="
 # use copy parameter, if you want the local copy of the files that are uploaded
 # default value is False
 save_to_db_desc(eq, config_name="HELIOTRON-test-name", user="username", copy=True)
+
+# You can download a specific simulation by ID from the database
+# This function will download the stored .zip file, extract it and return the file names
+# to future use ex. creating Equilibrium object
+names = get_desc_by_id(id=321, delete_zip=True, return_names=True)
+eq2 = Equilibrium.load(names[0])[-1]  
 ```
 
 You can give `config_name` as you wish. However, if there is an existing configuration with same parameters in the database, you will get following error,
