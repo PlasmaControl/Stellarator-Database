@@ -1,4 +1,5 @@
 import os
+import sys
 import numpy as np
 import csv
 import zipfile
@@ -344,6 +345,400 @@ def save_to_db_desc(
                 os.remove(boozer_filename)
 
 
+def generate_files_desc(
+    eq,
+    config_name,
+    user,
+    uploadPlots=False,
+    description=None,
+    provenance=None,
+    deviceid=None,
+    isDeviceNew=False,
+    inputfile=False,
+    inputfilename=None,
+    config_class=None,
+    initialization_method="surface",
+    deviceNFP=1,
+    deviceDescription=None,
+    device_stell_sym=False,
+    copy=False,
+):
+    """Load a DESC equilibrium and generate files for database.
+
+    This function is very similar to save_to_db_desc, but it does not upload the files
+    to the database. Instead, it generates the necessary files for the user to upload
+    to the database later. The main purpose of this function is to allow the user to
+    use computing clusters or other computers that may not have access to web browsers.
+
+    Parameters
+    ----------
+    eq : str, Equilibrium or EquilibriumFamily
+        file path of the output file without .h5 extension
+        or the equilibrium to be uploaded
+    config_name : str
+        unique identifier for the configuration
+    user : str
+        user who created the equilibrium (must have an account on the database)
+    uploadPlots : bool (Default: False)
+        True if the plots should be uploaded to the database. This can significantly slow
+        down the uploading process depending on your hardware.
+    description : str (Default: None)
+        description of the configuration
+    provenance : str (Default: None)
+        where the configuration came from
+    deviceid : str (Default: None)
+        unique identifier for the device
+    isDeviceNew : bool (Default: False)
+        True if the device is new and should be uploaded to the database
+    inputfile : bool (Default: False)
+        True if the input file should be uploaded to the database
+    inputfilename : str (Default: None)
+        name of the input file corresponding to this configuration
+    config_class : str (Default: None)
+        class of configuration i.e. quasisymmetry (QA, QH, QP)
+        or omnigenity (QI, OT, OH) or axisymmetry (AS)
+    initialization_method : str (Default: 'surface')
+        method used to initialize the equilibrium
+    deviceNFP : int (Default: 1)
+        number of field periods for the device
+    deviceDescription : str (Default: None)
+        description of the device
+    device_stell_sym : bool (Default: False)
+        stellarator symmetry of the device
+    copy : bool (Default: False)
+        True if the zip and csv files should be kept after uploading
+
+    """
+    if (
+        eq == ""
+        or eq is None
+        or config_name == ""
+        or config_name is None
+        or user == ""
+        or user is None
+    ):
+        raise ValueError("Please provide a valid input for eq, config_name, and user.")
+
+    if isinstance(eq, str):
+        if os.path.exists(eq + ".h5"):
+            filename = eq
+            eq = eq + ".h5"
+        else:
+            raise FileNotFoundError(f"{eq}.h5 does not exist.")
+    elif isinstance(eq, Equilibrium):
+        eq = eq
+        filename = config_name
+    elif isinstance(eq, EquilibriaFamily):
+        eq = eq[-1]
+        filename = config_name
+    else:
+        raise TypeError(
+            "Expected type str, Equilibrium or EquilibriumFamily "
+            + f"for eq, got type {type(eq)}"
+        )
+    if os.path.exists("auto_save.h5"):
+        print("Removing auto_save.h5")
+        os.remove("auto_save.h5")
+
+    auto_input = False
+    # Check input files, if there isn't any create automatically
+    if inputfilename is None and inputfile:
+        if os.path.exists(filename + "_input.txt"):
+            print(
+                f"Found an input file with name {filename}_input.txt and using that ..."
+            )
+            inputfilename = filename + "_input.txt"
+        else:
+            inputfilename = "auto_generated_" + filename + "_input.txt"
+            from desc.input_reader import InputReader
+
+            auto_input = True
+
+            print("Auto-generating input file...")
+            writer = InputReader()
+            if isinstance(eq, str):
+                writer.desc_output_to_input(inputfilename, eq)
+            elif isinstance(eq, Equilibrium):
+                eq.save("auto_save.h5")
+                writer.desc_output_to_input(inputfilename, "auto_save.h5")
+            elif isinstance(eq, EquilibriaFamily):
+                eq[-1].save("auto_save.h5")
+                writer.desc_output_to_input(inputfilename, "auto_save.h5")
+    elif inputfilename is not None and os.path.exists(inputfilename) and not inputfile:
+        inputfile = True
+
+    # Zip the files
+    print("Zipping files...")
+    zip_filename = filename + ".zip"
+    with zipfile.ZipFile(zip_filename, "w") as zipf:
+        if os.path.exists(filename + ".h5"):
+            zipf.write(filename + ".h5")
+        elif isinstance(eq, Equilibrium):
+            print("Saving equilibrium to .h5 file...")
+            if not os.path.exists("auto_save.h5"):
+                eq.save("auto_save.h5")
+            zipf.write("auto_save.h5")
+        elif isinstance(eq, EquilibriaFamily):
+            print("Saving equilibrium to .h5 file...")
+            if not os.path.exists("auto_save.h5"):
+                eq[-1].save("auto_save.h5")
+            zipf.write("auto_save.h5")
+        if inputfilename is not None and inputfile:
+            if os.path.exists(inputfilename):
+                zipf.write(inputfilename)
+
+    csv_filename = "desc_runs.csv"
+    config_csv_filename = "configurations.csv"
+    device_csv_filename = "devices_and_concepts.csv"
+    if os.path.exists(csv_filename):
+        os.remove(csv_filename)
+        print(f"Previous {csv_filename} has been deleted.")
+    if os.path.exists(config_csv_filename):
+        os.remove(config_csv_filename)
+        print(f"Previous {config_csv_filename} has been deleted.")
+    if os.path.exists(device_csv_filename):
+        os.remove(device_csv_filename)
+        print(f"Previous {device_csv_filename} has been deleted.")
+
+    print("Creating desc_runs.csv and configurations.csv...")
+    desc_to_csv(
+        eq,
+        name=config_name,
+        provenance=provenance,
+        description=description,
+        inputfilename=inputfilename,
+        deviceid=deviceid,
+        config_class=config_class,
+        user_updated=user,
+        user_created=user,
+        initialization_method=initialization_method,
+    )
+
+    if isDeviceNew:
+        if (
+            deviceid is not None
+            and config_class is not None
+            and deviceDescription is not None
+            and deviceNFP is not None
+            and device_stell_sym is not None
+            and config_name is not None
+        ):
+            print("Creating devices_and_concepts.csv...")
+            device_or_concept_to_csv(
+                name=config_name,
+                device_class=config_class,
+                NFP=deviceNFP,
+                description=deviceDescription,
+                stell_sym=device_stell_sym,
+                deviceid=deviceid,
+                user_created=user,
+                user_updated=user,
+            )
+        else:
+            raise ValueError(
+                "If the device is new, device_name, config_class, deviceDescription, "
+                + "deviceNFP, and device_stell_sym must be provided."
+            )
+
+    if uploadPlots:
+        from desc.plotting import plot_surfaces, plot_boozer_surface, plot_3d
+        import matplotlib.pyplot as plt
+        import plotly.graph_objects as go
+
+        if isinstance(eq, str):
+            eq = load(eq)
+            if isinstance(eq, EquilibriaFamily):
+                eq = eq[-1]
+        print("Plotting/saving surface, Boozer and 3D plots...")
+        surface_filename = filename + "_surface.webp"
+        boozer_filename = filename + "_boozer.webp"
+        d3_filename = filename + "_3d.html"
+        plot_surfaces(eq=eq, label=f"{config_name}")
+        plt.savefig(surface_filename, dpi=90)
+        plot_boozer_surface(eq)
+        plt.savefig(boozer_filename, dpi=90)
+        plt.close()
+
+        fig = go.Figure()
+        grid3d = LinearGrid(
+            rho=1.0,
+            theta=np.linspace(0, 2 * np.pi, 30),
+            zeta=np.linspace(0, 2 * np.pi, max(140, int(20 * eq.NFP))),
+        )
+        # Update layout to adjust the size of the plot
+        # Update layout to adjust the size of the plot
+        plot_3d(eq, "|B|", fig=fig, grid=grid3d, cmap="plasma")
+        fig.update_layout(
+            width=900,  # Set the width of the plot
+            height=600,  # Set the height of the plot
+            margin=dict(l=0, r=0, t=0, b=0),  # Set margins (left, right, top, bottom)
+            paper_bgcolor="rgb(0, 0, 0)",  # Set background color
+        )
+        fig.write_html(
+            d3_filename, include_plotlyjs=False, full_html=False, div_id="plot3d"
+        )
+
+    folder_name = filename
+    print(f"Creating folder {folder_name}...")
+    os.makedirs(folder_name)
+    print("Moving files to the folder...")
+    os.rename(zip_filename, os.path.join(folder_name, zip_filename))
+    os.rename(csv_filename, os.path.join(folder_name, csv_filename))
+    os.rename(config_csv_filename, os.path.join(folder_name, config_csv_filename))
+    if os.path.exists(device_csv_filename) and isDeviceNew:
+        os.rename(device_csv_filename, os.path.join(folder_name, device_csv_filename))
+    if uploadPlots:
+        os.rename(surface_filename, os.path.join(folder_name, surface_filename))
+        os.rename(boozer_filename, os.path.join(folder_name, boozer_filename))
+        os.rename(d3_filename, os.path.join(folder_name, d3_filename))
+
+
+def upload_files_desc(folder_path, verbose=1):
+    """Upload the files in the folder to the database.
+
+    This function is used to upload the files generated by generate_files_desc to the
+    database. The folder should contain the zip file, csv files, and any plots that
+    need to be uploaded. The function will upload the files to the database without doing
+    actual calculations. This is useful for users who have generated the files on a
+    different machine and want to upload them to the database on a different machine
+    with web browser access.
+
+    Parameters
+    ----------
+    folder_path : str
+        path to the folder containing the files to be uploaded
+
+    verbose : int (Default: 1)
+        level of verbosity. 0 is silent, 1 is minimal, 2 is detailed
+    """
+    if not os.path.exists(folder_path):
+        raise FileNotFoundError(f"{folder_path} does not exist.")
+
+    uploadPlots = False
+    isDeviceNew = False
+    zip_filename = None
+    csv_filename = None
+    config_csv_filename = None
+    device_csv_filename = None
+    surface_filename = None
+    boozer_filename = None
+    d3_filename = None
+
+    filenames = os.listdir(folder_path)
+    for file in filenames:
+        if file.endswith(".zip"):
+            zip_filename = os.path.join(folder_path, file)
+        elif file.endswith(".csv") and "desc_runs" in file:
+            csv_filename = os.path.join(folder_path, file)
+        elif file.endswith(".csv") and "configurations" in file:
+            config_csv_filename = os.path.join(folder_path, file)
+        elif file.endswith(".csv") and "devices_and_concepts" in file:
+            device_csv_filename = os.path.join(folder_path, file)
+            isDeviceNew = True
+        elif file.endswith(".webp") and "surface" in file:
+            surface_filename = os.path.join(folder_path, file)
+        elif file.endswith(".webp") and "boozer" in file:
+            boozer_filename = os.path.join(folder_path, file)
+        elif file.endswith(".html") and "3d" in file:
+            d3_filename = os.path.join(folder_path, file)
+            uploadPlots = True
+
+    zip_upload_button_id = "zipToUpload"
+    csv_upload_button_id = "descToUpload"
+    cfg_upload_button_id = "configToUpload"
+    device_upload_button_id = "deviceToUpload"
+    surface_upload_button_id = "surfaceToUpload"
+    boozer_upload_button_id = "boozerToUpload"
+    plot3d_upload_button_id = "plot3dToUpload"
+    confirm_button_id = "confirmDesc"
+
+    things_to_upload = [
+        zip_filename,
+        csv_filename,
+        config_csv_filename,
+        device_csv_filename,
+        surface_filename,
+        boozer_filename,
+        d3_filename,
+    ]
+
+    if verbose > 0:
+        print(f"Uploading contents of {folder_path} to database...\n")
+    if verbose > 1:
+        print(
+            f"Files to upload: {[thing for thing in things_to_upload if thing is not None]}"
+        )
+    driver = get_driver()
+    driver.get("https://ye2698.mycpanel.princeton.edu/upload-page/")
+
+    try:
+        # Upload the zip file
+        file_input = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, zip_upload_button_id))
+        )
+        file_input.send_keys(os.path.abspath(zip_filename))
+
+        # Upload the csv file for desc_runs
+        file_input2 = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, csv_upload_button_id))
+        )
+        file_input2.send_keys(os.path.abspath(csv_filename))
+
+        # Upload the csv file for configurations
+        file_input3 = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, cfg_upload_button_id))
+        )
+        file_input3.send_keys(os.path.abspath(config_csv_filename))
+
+        if uploadPlots:
+            # Upload the webp file for surface plot
+            file_input4 = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, surface_upload_button_id))
+            )
+            file_input4.send_keys(os.path.abspath(surface_filename))
+
+            # Upload the webp file for Boozer plot
+            file_input5 = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, boozer_upload_button_id))
+            )
+            file_input5.send_keys(os.path.abspath(boozer_filename))
+
+            # Upload the webp file for Boozer plot
+            file_input6 = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, plot3d_upload_button_id))
+            )
+            file_input6.send_keys(os.path.abspath(d3_filename))
+
+        # Upload the csv file if the device is new
+        if isDeviceNew:
+            file_input4 = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, device_upload_button_id))
+            )
+            file_input4.send_keys(os.path.abspath(device_csv_filename))
+
+        # Confirm the upload
+        confirm_button = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, confirm_button_id))
+        )
+        confirm_button.click()
+
+        # Wait for the messageContainer div to contain text
+        WebDriverWait(driver, 10).until(
+            lambda driver: driver.find_element(By.ID, "messageContainer").text.strip()
+            != ""
+        )
+
+        # Extract and print the message
+        message_element = driver.find_element(By.ID, "messageContainer")
+        message = message_element.text
+        print(message)
+    except:  # noqa: E722
+        # Extract and print the message
+        message_element = driver.find_element(By.ID, "messageContainer")
+        message = message_element.text
+        print(message)
+
+
 def desc_to_csv(
     eq,
     name=None,
@@ -536,7 +931,7 @@ def desc_to_csv(
     ############ configuration Data Table ############
     data_configurations["name"] = name
     data_configurations["NFP"] = eq.NFP
-    data_configurations["stell_sym"] = bool(eq.sym)
+    data_configurations["stell_sym"] = int(eq.sym)
 
     if kwargs.get("deviceid", None) is not None:
         data_configurations["deviceid"] = kwargs.get("deviceid", None)
