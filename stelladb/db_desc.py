@@ -361,7 +361,6 @@ def generate_files_desc(
     deviceNFP=1,
     deviceDescription=None,
     device_stell_sym=False,
-    copy=False,
 ):
     """Load a DESC equilibrium and generate files for database.
 
@@ -588,6 +587,9 @@ def generate_files_desc(
         os.rename(surface_filename, os.path.join(folder_name, surface_filename))
         os.rename(boozer_filename, os.path.join(folder_name, boozer_filename))
         os.rename(d3_filename, os.path.join(folder_name, d3_filename))
+
+    if os.path.exists("auto_save.h5"):
+        os.remove("auto_save.h5")
 
 
 def upload_files_desc(folder_path, verbose=1):
