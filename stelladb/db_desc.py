@@ -887,7 +887,6 @@ def desc_to_csv(
     if eq.iota:
         data_desc_runs["iota_profile"] = eq.iota(rho)  # should name differently
         data_desc_runs["iota_max"] = np.max(eq.iota(rho_dense))
-
         data_desc_runs["iota_min"] = np.min(eq.iota(rho_dense))
 
         data_desc_runs["current_profile"] = round(
@@ -904,6 +903,9 @@ def desc_to_csv(
         data_desc_runs["current_specification"] = "net enclosed current"
 
     data_desc_runs["profile_rho"] = rho
+    data_desc_runs["pressure_profile"] = eq.pressure(rho)
+    data_desc_runs["pressure_max"] = np.max(eq.pressure(rho_dense))
+    data_desc_runs["pressure_min"] = np.min(eq.pressure(rho_dense))
 
     rho_mercier = np.linspace(0.1, 1.0, 11, endpoint=True)
     rho_grid_mercier = LinearGrid(rho=rho_mercier, M=0, N=0, NFP=eq.NFP)
@@ -911,11 +913,6 @@ def desc_to_csv(
     data_desc_runs["D_Mercier_max"] = np.max(Dmerc)
     data_desc_runs["D_Mercier_min"] = np.min(Dmerc)
     data_desc_runs["D_Mercier"] = Dmerc
-
-    data_desc_runs["iota_min"] = np.min(data_iota_dense)
-    data_desc_runs["pressure_profile"] = eq.pressure(rho)
-    data_desc_runs["pressure_max"] = np.max(eq.pressure(rho_dense))
-    data_desc_runs["pressure_min"] = np.min(eq.pressure(rho_dense))
 
     today = date.today()
     data_desc_runs["date_created"] = kwargs.get("date_created", today)
