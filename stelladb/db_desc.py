@@ -1,5 +1,4 @@
 import os
-import sys
 import numpy as np
 import csv
 import zipfile
@@ -16,6 +15,7 @@ from desc.grid import LinearGrid
 from desc.vmec_utils import ptolemy_identity_rev, zernike_to_fourier
 from desc.io.hdf5_io import hdf5Reader
 from desc.io.equilibrium_io import load
+from desc.profiles import *
 
 from .getters import get_driver, get_file_in_directory
 from .device import device_or_concept_to_csv
@@ -440,7 +440,6 @@ def generate_files_desc(
         print("Removing auto_save.h5")
         os.remove("auto_save.h5")
 
-    auto_input = False
     # Check input files, if there isn't any create automatically
     if inputfilename is None and inputfile:
         if os.path.exists(filename + "_input.txt"):
@@ -451,8 +450,6 @@ def generate_files_desc(
         else:
             inputfilename = "auto_generated_" + filename + "_input.txt"
             from desc.input_reader import InputReader
-
-            auto_input = True
 
             print("Auto-generating input file...")
             writer = InputReader()
@@ -824,6 +821,12 @@ def desc_to_csv(
             "Expected type str, Equilibrium or EquilibriumFamily "
             + f"for eq, got type {type(eq)}"
         )
+    if (
+        isinstance(eq.pressure, MTanhProfile)
+        or isinstance(eq.current, MTanhProfile)
+        or isinstance(eq.iota, MTanhProfile)
+    ):
+        raise ValueError("MTanhProfile profiles are currently not supported.")
 
     ### Compute Required Data ###
     rho = np.linspace(0, 1.0, 11, endpoint=True)
@@ -853,7 +856,6 @@ def desc_to_csv(
         "iota",
     ]
     data_rho = eq.compute(keys_rho, grid=rho_grid)
-
     data_iota_dense = eq.compute("iota", grid=rho_grid_dense)["iota"]
 
     ############ DESC_runs Data Table ############
@@ -879,14 +881,9 @@ def desc_to_csv(
     data_desc_runs["n_tor"] = eq.N
     data_desc_runs["n_grid"] = eq.N_grid
 
-    data_desc_runs["bdry_ratio"] = (
-        1.0  # this is not a equilibrium property, so should not be saved
-    )
-
     # save profiles
-
     if eq.iota:
-        data_desc_runs["iota_profile"] = eq.iota(rho)  # sohuld name differently
+        data_desc_runs["iota_profile"] = eq.iota(rho)  # should name differently
         data_desc_runs["iota_max"] = np.max(eq.iota(rho_dense))
 
         data_desc_runs["iota_min"] = np.min(eq.iota(rho_dense))
@@ -965,8 +962,7 @@ def desc_to_csv(
         data_configurations["class"] = "AS"
 
     # surface geometry
-    # currently saving as VMEC format but I'd prefer if we could do DESC format...
-
+    # TODO: currently saving as VMEC format but I'd prefer if we could do DESC format...
     r1 = np.ones_like(eq.R_lmn)
     r1[eq.R_basis.modes[:, 1] < 0] *= -1
     m, n, x_mn = zernike_to_fourier(
@@ -996,31 +992,31 @@ def desc_to_csv(
         data_configurations["ZBC"] = np.zeros_like(s)
 
     # profiles
-    # TODO: make dict of different classes of Profile and
-    # the corresponding type of profile, to support more than just
-    # power series
-    data_configurations["pressure_profile_type"] = "power_series"
-    data_configurations["pressure_profile_data1"] = eq.pressure.basis.modes[
-        :, 0
-    ]  # these are the mode numbers
-    data_configurations["pressure_profile_data2"] = (
-        eq.pressure.params
-    )  # these are the coefficients
+    data_configurations["pressure_profile_type"] = (eq.pressure).__class__.__name__
+    data_configurations["pressure_profile_data1"] = (
+        eq.pressure.basis.modes[:, 0]
+        if not hasattr(eq.pressure, "knots")
+        else eq.pressure.knots
+    )
+    data_configurations["pressure_profile_data2"] = eq.pressure.params
 
     if eq.current:
-        data_configurations["current_profile_type"] = "power_series"
-        data_configurations["current_profile_data1"] = eq.current.basis.modes[
-            :, 0
-        ]  # these are the mode numbers
+        data_configurations["current_profile_type"] = (eq.current).__class__.__name__
+        data_configurations["current_profile_data1"] = (
+            eq.current.basis.modes[:, 0]
+            if not hasattr(eq.current, "knots")
+            else eq.current.knots
+        )
         data_configurations["current_profile_data2"] = (
             eq.current.params
         )  # these are the coefficients
-
     elif eq.iota:
-        data_configurations["iota_profile_type"] = "power_series"
-        data_configurations["iota_profile_data1"] = eq.iota.basis.modes[
-            :, 0
-        ]  # these are the mode numbers
+        data_configurations["iota_profile_type"] = (eq.iota).__class__.__name__
+        data_configurations["iota_profile_data1"] = (
+            eq.iota.basis.modes[:, 0]
+            if not hasattr(eq.iota, "knots")
+            else eq.iota.knots
+        )
         data_configurations["iota_profile_data2"] = (
             eq.iota.params
         )  # these are the coefficients
