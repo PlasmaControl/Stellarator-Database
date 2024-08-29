@@ -747,8 +747,6 @@ def desc_to_csv(
     initialization_method="surface",
     user_created=None,
     user_updated=None,
-    output_csv_name_desc="desc_runs.csv",
-    output_csv_name_config="configurations.csv",
     **kwargs,
 ):
     """Save DESC output file as a csv with relevant information.
@@ -797,8 +795,8 @@ def desc_to_csv(
     data_desc_runs = {}
     data_configurations = {}
 
-    desc_runs_csv_name = output_csv_name_desc
-    configurations_csv_name = output_csv_name_config
+    desc_runs_csv_name = "desc_runs.csv"
+    configurations_csv_name = "configurations.csv"
 
     if isinstance(eq, str) and os.path.exists(eq):
         data_desc_runs["outputfile"] = os.path.basename(eq)
