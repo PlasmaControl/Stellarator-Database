@@ -68,10 +68,10 @@ names = get_desc_by_id(id=321, delete_zip=True, return_names=True)
 eq2 = Equilibrium.load(names[0])[-1]  
 ```
 
-You can give `config_name` as you wish. However, if there is an existing configuration with same parameters in the database, you will get following error,
+You can give `config_name` as you wish. However, if there is an existing configuration with same parameters in the database, you will get following warning,
 ```
 Configuration data already exists in the database with name: HELIOTRON.
 ```
-Then, you should change your `config_name` to match that and try again.
+Then, you should change your `config_name` to match that and try again. Unfortunately, you first upload will use the existing configuration data. if you believe that is wrong please reach one of the admins to delete it.
 
 ## VMEC Utilities are not tested yet!

@@ -1055,6 +1055,7 @@ def desc_to_csv(
 
 def get_desc_by_id(
     id,
+    download_directory,
     delete_zip=False,
     return_names=False,
 ):
@@ -1064,6 +1065,8 @@ def get_desc_by_id(
     ----------
     id : str
         id of the equilibrium
+    download_directory : str
+        directory where the zip file is downloaded. Depends on the user's system.
     delete_zip : bool (Default: False)
         True if the zip file should be deleted after extracting the contents
     return_names : bool (Default: False)
@@ -1080,7 +1083,7 @@ def get_desc_by_id(
     >>> from desc.plotting import plot_surfaces
     >>> from desc.equilibrium import Equilibrium
 
-    >>> names = get_desc_by_id(321, delete_zip=True, return_names=True)
+    >>> names = get_desc_by_id(321, download_directory='/downloads', delete_zip=True, return_names=True)
     >>> eq = Equilibrium.load(names[0])[-1]
     >>> plot_surfaces(eq);
 
@@ -1152,15 +1155,13 @@ def get_desc_by_id(
         # Wait for the download to complete (you can adjust the wait time if necessary)
         time.sleep(1)  # Adjust the time based on the file size and download speed
 
-        # Get the directory of the current Python file
-        current_directory = os.getcwd()
-        filename = get_file_in_directory(current_directory, f"desc_{id}_", ".zip")
+        filename = get_file_in_directory(download_directory, f"desc_{id}_", ".zip")
 
         # Extract the zip file
         with zipfile.ZipFile(filename, "r") as zip_ref:
             print(f"Extracting files: {zip_ref.namelist()}")
             zip_ref.extractall()
-            print(f"Extracted all files to {current_directory}")
+            print(f"Extracted all files to {os.getcwd()}")
 
         if delete_zip:
             os.remove(filename)
