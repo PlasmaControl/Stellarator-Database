@@ -4,7 +4,15 @@ from datetime import date
 
 import numpy as np
 from scipy.interpolate import InterpolatedUnivariateSpline
-from simsopt.mhd.vmec import Vmec
+
+try:
+    from simsopt.mhd.vmec import Vmec
+except ImportError:
+    raise ImportError(
+        "simsopt is required to use the functions in db_vmec.py. "
+        "Please install simsopt with `pip install simsopt` or "
+        "`conda install -c conda-forge simsopt`."
+    )
 
 from .device import device_or_concept_to_csv
 from .db_desc import _append_to_csv
@@ -202,7 +210,9 @@ def vmec_to_csv(  # noqa
 
     # Not sure how you are computing the average elongation: all the R & Z info is above
 
-    data_configurations["classification"] = "AS" if eq.ntor == 0 else kwargs.get("config_class")
+    data_configurations["classification"] = (
+        "AS" if eq.ntor == 0 else kwargs.get("config_class")
+    )
 
     # surface geometry
     # currently saving as VMEC format but I'd prefer if we could do DESC format...
@@ -241,6 +251,11 @@ def vmec_to_csv(  # noqa
 
     data_configurations["date_created"] = kwargs.get("date_created", today)
 
-    _append_to_csv(vmec_runs_csv_name, {k: v for k, v in data_vmec_runs.items() if v is not None})
-    _append_to_csv(configurations_csv_name, {k: v for k, v in data_configurations.items() if v is not None})
+    _append_to_csv(
+        vmec_runs_csv_name, {k: v for k, v in data_vmec_runs.items() if v is not None}
+    )
+    _append_to_csv(
+        configurations_csv_name,
+        {k: v for k, v in data_configurations.items() if v is not None},
+    )
     return None
