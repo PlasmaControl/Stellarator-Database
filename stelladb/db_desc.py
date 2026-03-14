@@ -1,13 +1,15 @@
 import os
+import shutil
 import numpy as np
 import csv
 import zipfile
 import time
 from datetime import date
 
+from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.common.exceptions import TimeoutException
 
 from desc.equilibrium import Equilibrium, EquilibriaFamily
@@ -17,102 +19,43 @@ from desc.io.hdf5_io import hdf5Reader
 from desc.io.equilibrium_io import load
 from desc.profiles import *
 
-from .getters import get_driver, get_file_in_directory
+from .getters import (
+    get_driver,
+    get_driver_for_download,
+    get_file_in_directory,
+    perform_login,
+)
 from .device import device_or_concept_to_csv
+from .urls import HOME_PAGE
+
+# ---------------------------------------------------------------------------
+# Private File/Data Preparation Helpers
+# ---------------------------------------------------------------------------
 
 
-def save_to_db_desc(
-    eq,
-    config_name,
-    user,
-    uploadPlots=False,
-    description=None,
-    provenance=None,
-    deviceid=None,
-    isDeviceNew=False,
-    inputfile=False,
-    inputfilename=None,
-    config_class=None,
-    initialization_method="surface",
-    deviceNFP=1,
-    deviceDescription=None,
-    device_stell_sym=False,
-    copy=False,
-):
-    """Load a DESC equilibrium and upload it to the database.
-
-    Parameters
-    ----------
-    eq : str, Equilibrium or EquilibriumFamily
-        file path of the output file without .h5 extension
-        or the equilibrium to be uploaded
-    config_name : str
-        unique identifier for the configuration
-    user : str
-        user who created the equilibrium (must have an account on the database)
-    uploadPlots : bool (Default: False)
-        True if the plots should be uploaded to the database. This can significantly slow
-        down the uploading process depending on your hardware.
-    description : str (Default: None)
-        description of the configuration
-    provenance : str (Default: None)
-        where the configuration came from
-    deviceid : str (Default: None)
-        unique identifier for the device
-    isDeviceNew : bool (Default: False)
-        True if the device is new and should be uploaded to the database
-    inputfile : bool (Default: False)
-        True if the input file should be uploaded to the database
-    inputfilename : str (Default: None)
-        name of the input file corresponding to this configuration
-    config_class : str (Default: None)
-        class of configuration i.e. quasisymmetry (QA, QH, QP)
-        or omnigenity (QI, OT, OH) or axisymmetry (AS)
-    initialization_method : str (Default: 'surface')
-        method used to initialize the equilibrium
-    deviceNFP : int (Default: 1)
-        number of field periods for the device
-    deviceDescription : str (Default: None)
-        description of the device
-    device_stell_sym : bool (Default: False)
-        stellarator symmetry of the device
-    copy : bool (Default: False)
-        True if the zip and csv files should be kept after uploading
-
-    """
-    if (
-        eq == ""
-        or eq is None
-        or config_name == ""
-        or config_name is None
-        or user == ""
-        or user is None
-    ):
-        raise ValueError("Please provide a valid input for eq, config_name, and user.")
+def _load_equilibrium(eq, config_name):
+    """Resolve eq to an Equilibrium (or str path) and return (eq, filename)."""
+    if os.path.exists(f"{config_name}_auto_save.h5"):
+        print(f"Removing {config_name}_auto_save.h5")
+        os.remove(f"{config_name}_auto_save.h5")
 
     if isinstance(eq, str):
         if os.path.exists(eq + ".h5"):
-            filename = eq
-            eq = eq + ".h5"
-        else:
-            raise FileNotFoundError(f"{eq}.h5 does not exist.")
+            return eq + ".h5", eq
+        raise FileNotFoundError(f"{eq}.h5 does not exist.")
     elif isinstance(eq, Equilibrium):
-        eq = eq
-        filename = config_name
+        return eq, config_name
     elif isinstance(eq, EquilibriaFamily):
-        eq = eq[-1]
-        filename = config_name
-    else:
-        raise TypeError(
-            "Expected type str, Equilibrium or EquilibriumFamily "
-            + f"for eq, got type {type(eq)}"
-        )
-    if os.path.exists("auto_save.h5"):
-        print("Removing auto_save.h5")
-        os.remove("auto_save.h5")
+        return eq[-1], config_name
+    raise TypeError(
+        "Expected type str, Equilibrium or EquilibriumFamily "
+        + f"for eq, got type {type(eq)}"
+    )
 
+
+def _prepare_input_file(eq, filename, inputfilename, inputfile):
+    """Find or auto-generate the DESC input file."""
     auto_input = False
-    # Check input files, if there isn't any create automatically
     if inputfilename is None and inputfile:
         if os.path.exists(filename + "_input.txt"):
             print(
@@ -120,381 +63,126 @@ def save_to_db_desc(
             )
             inputfilename = filename + "_input.txt"
         else:
-            inputfilename = "auto_generated_" + filename + "_input.txt"
             from desc.input_reader import InputReader
-            auto_input = True
 
+            inputfilename = "auto_generated_" + filename + "_input.txt"
+            auto_input = True
             print("Auto-generating input file...")
             writer = InputReader()
             if isinstance(eq, str):
                 writer.desc_output_to_input(inputfilename, eq)
-            elif isinstance(eq, Equilibrium):
-                eq.save("auto_save.h5")
-                writer.desc_output_to_input(inputfilename, "auto_save.h5")
-            elif isinstance(eq, EquilibriaFamily):
-                eq[-1].save("auto_save.h5")
-                writer.desc_output_to_input(inputfilename, "auto_save.h5")
+            else:
+                eq.save(f"{filename}_auto_save.h5")
+                writer.desc_output_to_input(inputfilename, f"{filename}_auto_save.h5")
     elif inputfilename is not None and os.path.exists(inputfilename) and not inputfile:
         inputfile = True
+    return inputfilename, auto_input, inputfile
 
-    # Zip the files
+
+def _create_zip(eq, filename, inputfilename, inputfile):
+    """Zip the equilibrium .h5 file and optional input file."""
     print("Zipping files...")
     zip_filename = filename + ".zip"
     with zipfile.ZipFile(zip_filename, "w") as zipf:
         if os.path.exists(filename + ".h5"):
             zipf.write(filename + ".h5")
-        elif isinstance(eq, Equilibrium):
-            print("Saving equilibrium to .h5 file...")
-            if not os.path.exists("auto_save.h5"):
-                eq.save("auto_save.h5")
-            zipf.write("auto_save.h5")
-        elif isinstance(eq, EquilibriaFamily):
-            print("Saving equilibrium to .h5 file...")
-            if not os.path.exists("auto_save.h5"):
-                eq[-1].save("auto_save.h5")
-            zipf.write("auto_save.h5")
-        if inputfilename is not None and inputfile:
-            if os.path.exists(inputfilename):
-                zipf.write(inputfilename)
-
-    csv_filename = "desc_runs.csv"
-    config_csv_filename = "configurations.csv"
-    device_csv_filename = "devices_and_concepts.csv"
-    if os.path.exists(csv_filename):
-        os.remove(csv_filename)
-        print(f"Previous {csv_filename} has been deleted.")
-    if os.path.exists(config_csv_filename):
-        os.remove(config_csv_filename)
-        print(f"Previous {config_csv_filename} has been deleted.")
-    if os.path.exists(device_csv_filename):
-        os.remove(device_csv_filename)
-        print(f"Previous {device_csv_filename} has been deleted.")
-
-    print("Creating desc_runs.csv and configurations.csv...")
-    desc_to_csv(
-        eq,
-        name=config_name,
-        provenance=provenance,
-        description=description,
-        inputfilename=inputfilename,
-        deviceid=deviceid,
-        config_class=config_class,
-        user_updated=user,
-        user_created=user,
-        initialization_method=initialization_method,
-    )
-
-    if isDeviceNew:
-        if (
-            deviceid is not None
-            and config_class is not None
-            and deviceDescription is not None
-            and deviceNFP is not None
-            and device_stell_sym is not None
-            and config_name is not None
-        ):
-            print("Creating devices_and_concepts.csv...")
-            device_or_concept_to_csv(
-                name=config_name,
-                device_class=config_class,
-                NFP=deviceNFP,
-                description=deviceDescription,
-                stell_sym=device_stell_sym,
-                deviceid=deviceid,
-                user_created=user,
-                user_updated=user,
-            )
         else:
-            raise ValueError(
-                "If the device is new, device_name, config_class, deviceDescription, "
-                + "deviceNFP, and device_stell_sym must be provided."
-            )
-
-    if uploadPlots:
-        from desc.plotting import plot_surfaces, plot_boozer_surface, plot_3d
-        import matplotlib.pyplot as plt
-        import plotly.graph_objects as go
-
-        if isinstance(eq, str):
-            eq = load(eq)
-            if isinstance(eq, EquilibriaFamily):
-                eq = eq[-1]
-        print("Plotting/saving surface, Boozer and 3D plots...")
-        surface_filename = filename + "_surface.webp"
-        boozer_filename = filename + "_boozer.webp"
-        d3_filename = filename + "_3d.html"
-        plot_surfaces(eq=eq, label=f"{config_name}")
-        plt.savefig(surface_filename, dpi=90)
-        plot_boozer_surface(eq)
-        plt.savefig(boozer_filename, dpi=90)
-        plt.close()
-
-        fig = go.Figure()
-        grid3d = LinearGrid(
-            rho=1.0,
-            theta=np.linspace(0, 2 * np.pi, 30),
-            zeta=np.linspace(0, 2 * np.pi, max(140, int(20 * eq.NFP))),
-        )
-        # Update layout to adjust the size of the plot
-        # Update layout to adjust the size of the plot
-        plot_3d(eq, "|B|", fig=fig, grid=grid3d, cmap="plasma")
-        fig.update_layout(
-            width=900,  # Set the width of the plot
-            height=600,  # Set the height of the plot
-            margin=dict(l=0, r=0, t=0, b=0), # Set margins (left, right, top, bottom)
-            paper_bgcolor='rgb(0, 0, 0)',  # Set background color
-        )
-        fig.write_html(d3_filename, include_plotlyjs=False, full_html=False, div_id='plot3d')
-
-    zip_upload_button_id = "zipToUpload"
-    csv_upload_button_id = "descToUpload"
-    cfg_upload_button_id = "configToUpload"
-    device_upload_button_id = "deviceToUpload"
-    surface_upload_button_id = "surfaceToUpload"
-    boozer_upload_button_id = "boozerToUpload"
-    plot3d_upload_button_id = "plot3dToUpload"
-    confirm_button_id = "confirmDesc"
-
-    print("Uploading to database...\n")
-    driver = get_driver()
-    driver.get("https://ye2698.mycpanel.princeton.edu/upload-page/")
-
-    try:
-        # Upload the zip file
-        file_input = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, zip_upload_button_id))
-        )
-        file_input.send_keys(os.path.abspath(zip_filename))
-
-        # Upload the csv file for desc_runs
-        file_input2 = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, csv_upload_button_id))
-        )
-        file_input2.send_keys(os.path.abspath(csv_filename))
-
-        # Upload the csv file for configurations
-        file_input3 = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, cfg_upload_button_id))
-        )
-        file_input3.send_keys(os.path.abspath(config_csv_filename))
-
-        if uploadPlots:
-            # Upload the webp file for surface plot
-            file_input4 = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, surface_upload_button_id))
-            )
-            file_input4.send_keys(os.path.abspath(surface_filename))
-
-            # Upload the webp file for Boozer plot
-            file_input5 = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, boozer_upload_button_id))
-            )
-            file_input5.send_keys(os.path.abspath(boozer_filename))
-
-            # Upload the webp file for Boozer plot
-            file_input6 = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, plot3d_upload_button_id))
-            )
-            file_input6.send_keys(os.path.abspath(d3_filename))
-
-        # Upload the csv file if the device is new
-        if isDeviceNew:
-            file_input4 = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, device_upload_button_id))
-            )
-            file_input4.send_keys(os.path.abspath(device_csv_filename))
-
-        # Confirm the upload
-        confirm_button = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, confirm_button_id))
-        )
-        confirm_button.click()
-
-        # Wait for the messageContainer div to contain text
-        WebDriverWait(driver, 10).until(
-            lambda driver: driver.find_element(By.ID, "messageContainer").text.strip()
-            != ""
-        )
-
-        # Extract and print the message
-        message_element = driver.find_element(By.ID, "messageContainer")
-        message = message_element.text
-        print(message)
-    except:  # noqa: E722
-        # Extract and print the message
-        message_element = driver.find_element(By.ID, "messageContainer")
-        message = message_element.text
-        print(message)
-
-    finally:
-        # Clean up resources
-        driver.quit()
-        if os.path.exists("auto_save.h5"):
-            os.remove("auto_save.h5")
-        if not copy:
-            os.remove(zip_filename)
-            os.remove(csv_filename)
-            os.remove(config_csv_filename)
-            if isDeviceNew:
-                os.remove(device_csv_filename)
-            if auto_input:
-                os.remove(inputfilename)
-            if uploadPlots:
-                os.remove(d3_filename)
-                os.remove(surface_filename)
-                os.remove(boozer_filename)
+            print("Saving equilibrium to .h5 file...")
+            auto_save_name = f"{filename}_auto_save.h5"
+            if not os.path.exists(auto_save_name):
+                eq.save(auto_save_name)
+            zipf.write(auto_save_name)
+        if inputfilename is not None and inputfile and os.path.exists(inputfilename):
+            zipf.write(inputfilename)
+    return zip_filename
 
 
-def generate_files_desc(
-    eq,
-    config_name,
-    user,
-    uploadPlots=False,
-    description=None,
-    provenance=None,
-    deviceid=None,
-    isDeviceNew=False,
-    inputfile=False,
-    inputfilename=None,
-    config_class=None,
-    initialization_method="surface",
-    deviceNFP=1,
-    deviceDescription=None,
-    device_stell_sym=False,
-):
-    """Load a DESC equilibrium and generate files for database.
-
-    This function is very similar to save_to_db_desc, but it does not upload the files
-    to the database. Instead, it generates the necessary files for the user to upload
-    to the database later. The main purpose of this function is to allow the user to
-    use computing clusters or other computers that may not have access to web browsers.
-
-    Parameters
-    ----------
-    eq : str, Equilibrium or EquilibriumFamily
-        file path of the output file without .h5 extension
-        or the equilibrium to be uploaded
-    config_name : str
-        unique identifier for the configuration
-    user : str
-        user who created the equilibrium (must have an account on the database)
-    uploadPlots : bool (Default: False)
-        True if the plots should be uploaded to the database. This can significantly slow
-        down the uploading process depending on your hardware.
-    description : str (Default: None)
-        description of the configuration
-    provenance : str (Default: None)
-        where the configuration came from
-    deviceid : str (Default: None)
-        unique identifier for the device
-    isDeviceNew : bool (Default: False)
-        True if the device is new and should be uploaded to the database
-    inputfile : bool (Default: False)
-        True if the input file should be uploaded to the database
-    inputfilename : str (Default: None)
-        name of the input file corresponding to this configuration
-    config_class : str (Default: None)
-        class of configuration i.e. quasisymmetry (QA, QH, QP)
-        or omnigenity (QI, OT, OH) or axisymmetry (AS)
-    initialization_method : str (Default: 'surface')
-        method used to initialize the equilibrium
-    deviceNFP : int (Default: 1)
-        number of field periods for the device
-    deviceDescription : str (Default: None)
-        description of the device
-    device_stell_sym : bool (Default: False)
-        stellarator symmetry of the device
-    copy : bool (Default: False)
-        True if the zip and csv files should be kept after uploading
-
-    """
-    if (
-        eq == ""
-        or eq is None
-        or config_name == ""
-        or config_name is None
-        or user == ""
-        or user is None
-    ):
-        raise ValueError("Please provide a valid input for eq, config_name, and user.")
+def _generate_desc_plots(eq, filename, config_name):
+    """Generate and save surface, Boozer, and 3D plots."""
+    from desc.plotting import plot_surfaces, plot_boozer_surface, plot_3d
+    import matplotlib.pyplot as plt
+    import plotly.graph_objects as go
 
     if isinstance(eq, str):
-        if os.path.exists(eq + ".h5"):
-            filename = eq
-            eq = eq + ".h5"
-        else:
-            raise FileNotFoundError(f"{eq}.h5 does not exist.")
-    elif isinstance(eq, Equilibrium):
-        eq = eq
-        filename = config_name
-    elif isinstance(eq, EquilibriaFamily):
-        eq = eq[-1]
-        filename = config_name
-    else:
-        raise TypeError(
-            "Expected type str, Equilibrium or EquilibriumFamily "
-            + f"for eq, got type {type(eq)}"
-        )
-    if os.path.exists("auto_save.h5"):
-        print("Removing auto_save.h5")
-        os.remove("auto_save.h5")
+        eq = load(eq)
+        if isinstance(eq, EquilibriaFamily):
+            eq = eq[-1]
 
-    # Check input files, if there isn't any create automatically
-    if inputfilename is None and inputfile:
-        if os.path.exists(filename + "_input.txt"):
-            print(
-                f"Found an input file with name {filename}_input.txt and using that ..."
-            )
-            inputfilename = filename + "_input.txt"
-        else:
-            inputfilename = "auto_generated_" + filename + "_input.txt"
-            from desc.input_reader import InputReader
+    print("Plotting/saving surface, Boozer and 3D plots...")
+    surface_filename = filename + "_surface.webp"
+    boozer_filename = filename + "_boozer.webp"
+    d3_filename = filename + "_3d.html"
 
-            print("Auto-generating input file...")
-            writer = InputReader()
-            if isinstance(eq, str):
-                writer.desc_output_to_input(inputfilename, eq)
-            elif isinstance(eq, Equilibrium):
-                eq.save("auto_save.h5")
-                writer.desc_output_to_input(inputfilename, "auto_save.h5")
-            elif isinstance(eq, EquilibriaFamily):
-                eq[-1].save("auto_save.h5")
-                writer.desc_output_to_input(inputfilename, "auto_save.h5")
-    elif inputfilename is not None and os.path.exists(inputfilename) and not inputfile:
-        inputfile = True
+    plot_surfaces(eq=eq, label=config_name)
+    plt.savefig(surface_filename, dpi=90)
+    plot_boozer_surface(eq)
+    plt.savefig(boozer_filename, dpi=90)
+    plt.close()
 
-    # Zip the files
-    print("Zipping files...")
-    zip_filename = filename + ".zip"
-    with zipfile.ZipFile(zip_filename, "w") as zipf:
-        if os.path.exists(filename + ".h5"):
-            zipf.write(filename + ".h5")
-        elif isinstance(eq, Equilibrium):
-            print("Saving equilibrium to .h5 file...")
-            if not os.path.exists("auto_save.h5"):
-                eq.save("auto_save.h5")
-            zipf.write("auto_save.h5")
-        elif isinstance(eq, EquilibriaFamily):
-            print("Saving equilibrium to .h5 file...")
-            if not os.path.exists("auto_save.h5"):
-                eq[-1].save("auto_save.h5")
-            zipf.write("auto_save.h5")
-        if inputfilename is not None and inputfile:
-            if os.path.exists(inputfilename):
-                zipf.write(inputfilename)
+    fig = go.Figure()
+    grid3d = LinearGrid(
+        rho=1.0,
+        theta=np.linspace(0, 2 * np.pi, 30),
+        zeta=np.linspace(0, 2 * np.pi, max(140, int(20 * eq.NFP))),
+    )
+    plot_3d(eq, "|B|", fig=fig, grid=grid3d, cmap="plasma")
+    fig.update_layout(
+        width=1200,
+        height=800,
+        margin=dict(l=0, r=0, t=0, b=0),
+        paper_bgcolor="rgb(0, 0, 0)",
+    )
+    fig.write_html(
+        d3_filename, include_plotlyjs=False, full_html=False, div_id="plot3d"
+    )
 
-    csv_filename = "desc_runs.csv"
-    config_csv_filename = "configurations.csv"
-    device_csv_filename = "devices_and_concepts.csv"
-    if os.path.exists(csv_filename):
-        os.remove(csv_filename)
-        print(f"Previous {csv_filename} has been deleted.")
-    if os.path.exists(config_csv_filename):
-        os.remove(config_csv_filename)
-        print(f"Previous {config_csv_filename} has been deleted.")
-    if os.path.exists(device_csv_filename):
-        os.remove(device_csv_filename)
-        print(f"Previous {device_csv_filename} has been deleted.")
+
+def _append_to_csv(filename, data):
+    """Append a dict as one row to a CSV file, writing the header if new."""
+    file_exists = os.path.isfile(filename)
+    fieldnames = sorted(data.keys())
+    try:
+        with open(filename, "a", newline="") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(data)
+    except OSError as e:
+        print(f"I/O error writing to {filename}: {e}")
+
+
+def _clean_stale_csvs(verbose=True):
+    """Removes standard CSVs if they already exist in the directory."""
+    files_to_check = ["desc_runs.csv", "configurations.csv", "devices_and_concepts.csv"]
+    for f in files_to_check:
+        if os.path.exists(f):
+            os.remove(f)
+            if verbose:
+                print(f"Previous {f} has been deleted.")
+
+
+def _prepare_all_artifacts(
+    eq,
+    config_name,
+    description,
+    provenance,
+    deviceid,
+    isDeviceNew,
+    inputfile,
+    inputfilename,
+    config_class,
+    initialization_method,
+    deviceDescription,
+    uploadPlots,
+):
+    """Handles all local file generation, zipping, and plotting before upload or storage."""
+    eq, filename = _load_equilibrium(eq, config_name)
+    inputfilename, auto_input, inputfile = _prepare_input_file(
+        eq, filename, inputfilename, inputfile
+    )
+    _create_zip(eq, filename, inputfilename, inputfile)
+
+    _clean_stale_csvs()
 
     print("Creating desc_runs.csv and configurations.csv...")
     desc_to_csv(
@@ -505,237 +193,77 @@ def generate_files_desc(
         inputfilename=inputfilename,
         deviceid=deviceid,
         config_class=config_class,
-        user_updated=user,
-        user_created=user,
         initialization_method=initialization_method,
     )
 
     if isDeviceNew:
-        if (
-            deviceid is not None
-            and config_class is not None
-            and deviceDescription is not None
-            and deviceNFP is not None
-            and device_stell_sym is not None
-            and config_name is not None
-        ):
-            print("Creating devices_and_concepts.csv...")
-            device_or_concept_to_csv(
-                name=config_name,
-                device_class=config_class,
-                NFP=deviceNFP,
-                description=deviceDescription,
-                stell_sym=device_stell_sym,
-                deviceid=deviceid,
-                user_created=user,
-                user_updated=user,
-            )
-        else:
-            raise ValueError(
-                "If the device is new, device_name, config_class, deviceDescription, "
-                + "deviceNFP, and device_stell_sym must be provided."
-            )
+        print("Creating devices_and_concepts.csv...")
+        device_or_concept_to_csv(name=config_name, description=deviceDescription)
 
     if uploadPlots:
-        from desc.plotting import plot_surfaces, plot_boozer_surface, plot_3d
-        import matplotlib.pyplot as plt
-        import plotly.graph_objects as go
+        _generate_desc_plots(eq, filename, config_name)
 
-        if isinstance(eq, str):
-            eq = load(eq)
-            if isinstance(eq, EquilibriaFamily):
-                eq = eq[-1]
-        print("Plotting/saving surface, Boozer and 3D plots...")
-        surface_filename = filename + "_surface.webp"
-        boozer_filename = filename + "_boozer.webp"
-        d3_filename = filename + "_3d.html"
-        plot_surfaces(eq=eq, label=f"{config_name}")
-        plt.savefig(surface_filename, dpi=90)
-        plot_boozer_surface(eq)
-        plt.savefig(boozer_filename, dpi=90)
-        plt.close()
+    return filename, auto_input
 
-        fig = go.Figure()
-        grid3d = LinearGrid(
-            rho=1.0,
-            theta=np.linspace(0, 2 * np.pi, 30),
-            zeta=np.linspace(0, 2 * np.pi, max(140, int(20 * eq.NFP))),
-        )
-        # Update layout to adjust the size of the plot
-        # Update layout to adjust the size of the plot
-        plot_3d(eq, "|B|", fig=fig, grid=grid3d, cmap="plasma")
-        fig.update_layout(
-            width=900,  # Set the width of the plot
-            height=600,  # Set the height of the plot
-            margin=dict(l=0, r=0, t=0, b=0),  # Set margins (left, right, top, bottom)
-            paper_bgcolor="rgb(0, 0, 0)",  # Set background color
-        )
-        fig.write_html(
-            d3_filename, include_plotlyjs=False, full_html=False, div_id="plot3d"
-        )
 
-    folder_name = filename
-    print(f"Creating folder {folder_name}...")
-    os.makedirs(folder_name)
-    print("Moving files to the folder...")
-    os.rename(zip_filename, os.path.join(folder_name, zip_filename))
-    os.rename(csv_filename, os.path.join(folder_name, csv_filename))
-    os.rename(config_csv_filename, os.path.join(folder_name, config_csv_filename))
-    if os.path.exists(device_csv_filename) and isDeviceNew:
-        os.rename(device_csv_filename, os.path.join(folder_name, device_csv_filename))
+def _upload_desc_files(driver, filename, isDeviceNew, uploadPlots):
+    """Fill the upload form with all prepared files and return the server response."""
+
+    def send(element_id, filepath):
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, element_id))
+        ).send_keys(os.path.abspath(filepath))
+
+    send("zipToUpload", f"{filename}.zip")
+    send("descToUpload", "desc_runs.csv")
+    send("configToUpload", "configurations.csv")
+
     if uploadPlots:
-        os.rename(surface_filename, os.path.join(folder_name, surface_filename))
-        os.rename(boozer_filename, os.path.join(folder_name, boozer_filename))
-        os.rename(d3_filename, os.path.join(folder_name, d3_filename))
+        send("surfaceToUpload", f"{filename}_surface.webp")
+        send("boozerToUpload", f"{filename}_boozer.webp")
+        send("plot3dToUpload", f"{filename}_3d.html")
 
-    if os.path.exists("auto_save.h5"):
-        os.remove("auto_save.h5")
+    if isDeviceNew:
+        send("deviceToUpload", "devices_and_concepts.csv")
+
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.ID, "confirmDesc"))
+    ).click()
+    WebDriverWait(driver, 30).until(
+        lambda d: d.find_elements(By.CSS_SELECTOR, ".success-div, .error-div")
+    )
+    return driver.find_element(By.CSS_SELECTOR, ".success-div, .error-div").text
 
 
-def upload_files_desc(folder_path, verbose=1):
-    """Upload the files in the folder to the database.
+def _cleanup_local_files(filename, auto_input, uploadPlots, keep_artifacts):
+    """Handles deletion of locally generated files if `keep_artifacts` is False."""
+    if os.path.exists(f"{filename}_auto_save.h5"):
+        os.remove(f"{filename}_auto_save.h5")
 
-    This function is used to upload the files generated by generate_files_desc to the
-    database. The folder should contain the zip file, csv files, and any plots that
-    need to be uploaded. The function will upload the files to the database without doing
-    actual calculations. This is useful for users who have generated the files on a
-    different machine and want to upload them to the database on a different machine
-    with web browser access.
+    if not keep_artifacts:
+        if os.path.exists(f"{filename}.zip"):
+            os.remove(f"{filename}.zip")
 
-    Parameters
-    ----------
-    folder_path : str
-        path to the folder containing the files to be uploaded
+        _clean_stale_csvs(verbose=False)
 
-    verbose : int (Default: 1)
-        level of verbosity. 0 is silent, 1 is minimal, 2 is detailed
-    """
-    if not os.path.exists(folder_path):
-        raise FileNotFoundError(f"{folder_path} does not exist.")
-
-    uploadPlots = False
-    isDeviceNew = False
-    zip_filename = None
-    csv_filename = None
-    config_csv_filename = None
-    device_csv_filename = None
-    surface_filename = None
-    boozer_filename = None
-    d3_filename = None
-
-    filenames = os.listdir(folder_path)
-    for file in filenames:
-        if file.endswith(".zip"):
-            zip_filename = os.path.join(folder_path, file)
-        elif file.endswith(".csv") and "desc_runs" in file:
-            csv_filename = os.path.join(folder_path, file)
-        elif file.endswith(".csv") and "configurations" in file:
-            config_csv_filename = os.path.join(folder_path, file)
-        elif file.endswith(".csv") and "devices_and_concepts" in file:
-            device_csv_filename = os.path.join(folder_path, file)
-            isDeviceNew = True
-        elif file.endswith(".webp") and "surface" in file:
-            surface_filename = os.path.join(folder_path, file)
-        elif file.endswith(".webp") and "boozer" in file:
-            boozer_filename = os.path.join(folder_path, file)
-        elif file.endswith(".html") and "3d" in file:
-            d3_filename = os.path.join(folder_path, file)
-            uploadPlots = True
-
-    zip_upload_button_id = "zipToUpload"
-    csv_upload_button_id = "descToUpload"
-    cfg_upload_button_id = "configToUpload"
-    device_upload_button_id = "deviceToUpload"
-    surface_upload_button_id = "surfaceToUpload"
-    boozer_upload_button_id = "boozerToUpload"
-    plot3d_upload_button_id = "plot3dToUpload"
-    confirm_button_id = "confirmDesc"
-
-    things_to_upload = [
-        zip_filename,
-        csv_filename,
-        config_csv_filename,
-        device_csv_filename,
-        surface_filename,
-        boozer_filename,
-        d3_filename,
-    ]
-
-    if verbose > 0:
-        print(f"Uploading contents of {folder_path} to database...\n")
-    if verbose > 1:
-        print(
-            f"Files to upload: {[thing for thing in things_to_upload if thing is not None]}"
-        )
-    driver = get_driver()
-    driver.get("https://ye2698.mycpanel.princeton.edu/upload-page/")
-
-    try:
-        # Upload the zip file
-        file_input = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, zip_upload_button_id))
-        )
-        file_input.send_keys(os.path.abspath(zip_filename))
-
-        # Upload the csv file for desc_runs
-        file_input2 = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, csv_upload_button_id))
-        )
-        file_input2.send_keys(os.path.abspath(csv_filename))
-
-        # Upload the csv file for configurations
-        file_input3 = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, cfg_upload_button_id))
-        )
-        file_input3.send_keys(os.path.abspath(config_csv_filename))
+        if auto_input:
+            auto_input_file = f"auto_generated_{filename}_input.txt"
+            if os.path.exists(auto_input_file):
+                os.remove(auto_input_file)
 
         if uploadPlots:
-            # Upload the webp file for surface plot
-            file_input4 = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, surface_upload_button_id))
-            )
-            file_input4.send_keys(os.path.abspath(surface_filename))
+            for f in [
+                f"{filename}_surface.webp",
+                f"{filename}_boozer.webp",
+                f"{filename}_3d.html",
+            ]:
+                if os.path.exists(f):
+                    os.remove(f)
 
-            # Upload the webp file for Boozer plot
-            file_input5 = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, boozer_upload_button_id))
-            )
-            file_input5.send_keys(os.path.abspath(boozer_filename))
 
-            # Upload the webp file for Boozer plot
-            file_input6 = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, plot3d_upload_button_id))
-            )
-            file_input6.send_keys(os.path.abspath(d3_filename))
-
-        # Upload the csv file if the device is new
-        if isDeviceNew:
-            file_input4 = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, device_upload_button_id))
-            )
-            file_input4.send_keys(os.path.abspath(device_csv_filename))
-
-        # Confirm the upload
-        confirm_button = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, confirm_button_id))
-        )
-        confirm_button.click()
-
-        # Wait for the messageContainer div to contain text
-        WebDriverWait(driver, 10).until(
-            lambda driver: driver.find_element(By.ID, "messageContainer").text.strip()
-            != ""
-        )
-
-        # Extract and print the message
-        message_element = driver.find_element(By.ID, "messageContainer")
-        message = message_element.text
-        print(message)
-    except:  # noqa: E722
-        # Extract and print the message
-        message_element = driver.find_element(By.ID, "messageContainer")
-        message = message_element.text
-        print(message)
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 
 def desc_to_csv(
@@ -745,419 +273,594 @@ def desc_to_csv(
     description=None,
     inputfilename=None,
     initialization_method="surface",
-    user_created=None,
-    user_updated=None,
     **kwargs,
 ):
-    """Save DESC output file as a csv with relevant information.
+    """Save DESC equilibrium data to CSV files for database upload.
+
+    Computes scalar metrics, profile arrays, surface geometry, and stability
+    quantities from the equilibrium and writes them to ``desc_runs.csv`` and
+    ``configurations.csv`` in the current working directory.
 
     Parameters
     ----------
-        eq : str, Equilibrium or EquilibriumFamily
-            file path of the output file without .h5 extension
-            or the equilibrium to be uploaded
-        name : str
-            name of configuration (and desc run)
-        provenance : str
-            where this configuration (and desc run) came from, e.g. DESC github repo
-        description : str
-            description of the configuration (and desc run)
-        inputfilename : str
-            name of the input file corresponding to this configuration (and desc run)
-        initialization_method : str
-            how the DESC equilibrium solution was initialized
-            one of "surface", "NAE", or the name of a .nc or .h5 file
-            corresponding to a VMEC (if .nc) or DESC (if .h5) solution
-
-    Kwargs
-    ------
-        date_created : str
-            when the DESC run was created, defaults to current day
-        publicationid : str
-            unique ID for a publication which this DESC output file is associated with.
-        deviceid : str
-            unique ID for a device/concept which this configuration is associated with.
-        config_class : str
-            class of configuration i.e. quasisymmetry (QA, QH, QP)
-            or omnigenity (QI, OT, OH) or axisymmetry (AS).
-            Defaults to None for a stellarator and (AS) for a tokamak
-            #TODO: can we attempt to automatically detect this for QS configs?
-            maybe with a threshold on low QS, then if passes that, classify
-            based on largest Boozer mode? can add a flag to the table like
-            "automatically labelled class" if this occurs
-            to be transparent about source of the class if it was not a human
-
-    Returns
-    -------
-        None
+    eq : str or Equilibrium or EquilibriaFamily
+        DESC equilibrium to save. If str, treated as a path to an ``.h5`` file
+        (without extension). If EquilibriaFamily, the last element is used.
+    name : str, optional
+        Configuration name stored in the ``configurations`` table.
+    provenance : str, optional
+        Free-text provenance note (e.g. paper reference or run description).
+    description : str, optional
+        Free-text description of the equilibrium.
+    inputfilename : str, optional
+        Path to the DESC input file used to produce this equilibrium.
+    initialization_method : str, optional
+        Method used to initialize the equilibrium (default ``"surface"``).
+    **kwargs
+        Extra fields passed directly into the CSV rows, e.g. ``deviceid``,
+        ``config_class``, ``publicationid``, ``date_created``.
     """
-    # data dicts for each table
-    data_desc_runs = {}
-    data_configurations = {}
-
-    desc_runs_csv_name = "desc_runs.csv"
-    configurations_csv_name = "configurations.csv"
+    data_desc_runs = {"outputfile": f"{name}_auto_save.h5"}
 
     if isinstance(eq, str) and os.path.exists(eq):
         data_desc_runs["outputfile"] = os.path.basename(eq)
         reader = hdf5Reader(eq)
-        version = reader.read_dict()["__version__"]
+        version = reader.read_dict().get("__version__", "unknown")
         eq = load(eq)
-        if isinstance(eq, EquilibriaFamily):
-            eq = eq[-1]
-    elif isinstance(eq, Equilibrium):
-        import desc
-
-        version = desc.__version__
-        data_desc_runs["outputfile"] = "auto_save.h5"
-    elif isinstance(eq, EquilibriaFamily):
-        import desc
-
-        eq = eq[-1]
-        version = desc.__version__
-        data_desc_runs["outputfile"] = "auto_save.h5"
     else:
+        import desc
+
+        version = desc.__version__
+
+    if type(eq).__name__ == "EquilibriaFamily":
+        eq = eq[-1]
+
+    if type(eq).__name__ != "Equilibrium":
         raise TypeError(
-            "Expected type str, Equilibrium or EquilibriumFamily "
-            + f"for eq, got type {type(eq)}"
+            f"Expected str, Equilibrium or EquilibriaFamily for eq, got {type(eq)}"
         )
-    if (
-        isinstance(eq.pressure, MTanhProfile)
-        or isinstance(eq.current, MTanhProfile)
-        or isinstance(eq.iota, MTanhProfile)
+
+    if any(
+        type(prof).__name__ == "MTanhProfile"
+        for prof in (eq.pressure, eq.current, eq.iota)
     ):
         raise ValueError("MTanhProfile profiles are currently not supported.")
 
-    ### Compute Required Data ###
+    nfp = eq.NFP
     rho = np.linspace(0, 1.0, 11, endpoint=True)
-    rho_grid = LinearGrid(rho=rho, M=0, N=0, NFP=eq.NFP)
     rho_dense = np.linspace(0, 1.0, 101, endpoint=True)
-    rho_grid_dense = LinearGrid(rho=rho_dense, M=0, N=0, NFP=eq.NFP)
 
-    rho_grid.nodes[0, 0] = 1e-12  # bc we dont have axis limit right now
-    rho_grid_dense.nodes[0, 0] = 1e-12  # bc we dont have axis limit right now
+    rho_grid = LinearGrid(rho=rho, M=0, N=0, NFP=nfp)
+    rho_grid_dense = LinearGrid(rho=rho_dense, M=0, N=0, NFP=nfp)
+    rho_grid.nodes[0, 0] = 1e-12
+    rho_grid_dense.nodes[0, 0] = 1e-12
 
-    keys = [
-        "R0/a",
-        "a",
-        "R0",
-        "V",
-        "<|B|>_vol",
-        "<beta>_vol",
-        "current",
-        "R",
-        "Z",
-        "a_major/a_minor",
-    ]
-    data_keys = eq.compute(keys)
-
-    keys_rho = [
-        "current",
-        "iota",
-    ]
-    data_rho = eq.compute(keys_rho, grid=rho_grid)
+    data_keys = eq.compute(
+        [
+            "R0/a",
+            "a",
+            "R0",
+            "V",
+            "<|B|>_vol",
+            "<beta>_vol",
+            "current",
+            "R",
+            "Z",
+            "a_major/a_minor",
+        ]
+    )
+    data_rho = eq.compute(["current", "iota"], grid=rho_grid)
     data_iota_dense = eq.compute("iota", grid=rho_grid_dense)["iota"]
 
-    ############ DESC_runs Data Table ############
-    if name is not None:
-        data_desc_runs["config_name"] = name
-    if provenance is not None:
-        data_desc_runs["provenance"] = provenance
-    if description is not None:
-        data_desc_runs["description"] = description
+    today = kwargs.get("date_created", date.today())
 
-    data_desc_runs["version"] = (
-        version  # this is basically redundant with git commit I think
+    data_desc_runs.update(
+        {
+            "provenance": provenance,
+            "description": description,
+            "version": version,
+            "inputfilename": inputfilename,
+            "initialization_method": initialization_method,
+            "l_rad": int(eq.L),
+            "l_grid": int(eq.L_grid),
+            "m_pol": int(eq.M),
+            "m_grid": int(eq.M_grid),
+            "n_tor": int(eq.N),
+            "n_grid": int(eq.N_grid),
+            "profile_rho": rho,
+            "pressure_profile": eq.pressure(rho),
+            "pressure_max": float(np.max(eq.pressure(rho_dense))),
+            "pressure_min": float(np.min(eq.pressure(rho_dense))),
+            "spectral_indexing": eq.spectral_indexing,
+            "sym": bool(eq.sym),
+            "date_created": today,
+            "publicationid": kwargs.get("publicationid"),
+        }
     )
-    if inputfilename is not None:
-        data_desc_runs["inputfilename"] = inputfilename
 
-    data_desc_runs["initialization_method"] = initialization_method
-
-    data_desc_runs["l_rad"] = eq.L
-    data_desc_runs["l_grid"] = eq.L_grid
-    data_desc_runs["m_pol"] = eq.M
-    data_desc_runs["m_grid"] = eq.M_grid
-    data_desc_runs["n_tor"] = eq.N
-    data_desc_runs["n_grid"] = eq.N_grid
-
-    # save profiles
     if eq.iota:
-        data_desc_runs["iota_profile"] = eq.iota(rho)  # should name differently
-        data_desc_runs["iota_max"] = np.max(eq.iota(rho_dense))
-        data_desc_runs["iota_min"] = np.min(eq.iota(rho_dense))
-
-        data_desc_runs["current_profile"] = round(
-            data_rho["current"], ndigits=14
-        )  # round to make sure any 0s are actually zero
-        data_configurations["current_specification"] = "iota"
-        data_desc_runs["current_specification"] = "iota"
+        data_desc_runs.update(
+            {
+                "iota_profile": eq.iota(rho),
+                "iota_max": float(np.max(eq.iota(rho_dense))),
+                "iota_min": float(np.min(eq.iota(rho_dense))),
+                "current_profile": round(data_rho["current"], ndigits=14),
+                "current_specification": "iota",
+            }
+        )
     elif eq.current:
-        data_desc_runs["current_profile"] = eq.current(rho)
-        data_desc_runs["iota_profile"] = round(data_rho["iota"], ndigits=14)
-        data_desc_runs["iota_max"] = np.max(data_iota_dense)
-        data_desc_runs["iota_min"] = np.min(data_iota_dense)
-        data_configurations["current_specification"] = "net enclosed current"
-        data_desc_runs["current_specification"] = "net enclosed current"
-
-    data_desc_runs["profile_rho"] = rho
-    data_desc_runs["pressure_profile"] = eq.pressure(rho)
-    data_desc_runs["pressure_max"] = np.max(eq.pressure(rho_dense))
-    data_desc_runs["pressure_min"] = np.min(eq.pressure(rho_dense))
-
-    rho_mercier = np.linspace(0.1, 1.0, 11, endpoint=True)
-    rho_grid_mercier = LinearGrid(rho=rho_mercier, M=0, N=0, NFP=eq.NFP)
-    Dmerc = eq.compute("D_Mercier", grid=rho_grid_mercier)["D_Mercier"]
-    data_desc_runs["D_Mercier_max"] = np.max(Dmerc)
-    data_desc_runs["D_Mercier_min"] = np.min(Dmerc)
-    data_desc_runs["D_Mercier"] = Dmerc
-
-    today = date.today()
-    data_desc_runs["date_created"] = kwargs.get("date_created", today)
-    data_desc_runs["date_updated"] = kwargs.get("date_updated", today)
-    if user_created is not None:
-        data_desc_runs["user_created"] = user_created
-    if user_updated is not None:
-        data_desc_runs["user_updated"] = user_updated
-    if kwargs.get("publicationid", None) is not None:
-        data_desc_runs["publicationid"] = kwargs.get("publicationid", None)
-
-    ############ configuration Data Table ############
-    data_configurations["name"] = name
-    data_configurations["NFP"] = eq.NFP
-    data_configurations["stell_sym"] = int(eq.sym)
-
-    if kwargs.get("deviceid", None) is not None:
-        data_configurations["deviceid"] = kwargs.get("deviceid", None)
-    if provenance is not None:
-        data_configurations["provenance"] = provenance
-    if description is not None:
-        data_configurations["description"] = description
-
-    data_configurations["toroidal_flux"] = eq.Psi
-    data_configurations["aspect_ratio"] = data_keys["R0/a"]
-    data_configurations["minor_radius"] = data_keys["a"]
-    data_configurations["major_radius"] = data_keys["R0"]
-    data_configurations["volume"] = data_keys["V"]
-    data_configurations["volume_averaged_B"] = data_keys["<|B|>_vol"]
-    data_configurations["volume_averaged_beta"] = data_keys["<beta>_vol"]
-    data_configurations["total_toroidal_current"] = float(
-        f'{data_keys["current"][-1]:1.2e}'
-    )
-    data_configurations["R_excursion"] = float(
-        f'{np.max(data_keys["R"])-np.min(data_keys["R"]):1.4e}'
-    )
-    data_configurations["Z_excursion"] = float(
-        f'{np.max(data_keys["Z"])-np.min(data_keys["Z"]):1.4e}'
-    )
-    data_configurations["average_elongation"] = float(
-        f'{np.mean(data_keys["a_major/a_minor"]):1.4e}'
-    )
-    if kwargs.get("config_class", None) is not None:
-        data_configurations["class"] = kwargs.get("config_class", None)
-    if eq.N == 0:  # is axisymmetric
-        data_configurations["class"] = "AS"
-
-    # surface geometry
-    # TODO: currently saving as VMEC format but I'd prefer if we could do DESC format...
-    r1 = np.ones_like(eq.R_lmn)
-    r1[eq.R_basis.modes[:, 1] < 0] *= -1
-    m, n, x_mn = zernike_to_fourier(
-        r1 * eq.R_lmn, basis=eq.R_basis, rho=np.array([1.0])
-    )
-    xm, xn, s, c = ptolemy_identity_rev(m, n, x_mn)
-
-    data_configurations["m"] = xm
-    data_configurations["n"] = xn
-
-    data_configurations["RBC"] = c[0, :]
-    if not eq.sym:
-        data_configurations["RBS"] = s[0, :]
-    else:
-        data_configurations["RBS"] = np.zeros_like(c)
-    # Z
-    z1 = np.ones_like(eq.Z_lmn)
-    z1[eq.Z_basis.modes[:, 1] < 0] *= -1
-    m, n, x_mn = zernike_to_fourier(
-        z1 * eq.Z_lmn, basis=eq.Z_basis, rho=np.array([1.0])
-    )
-    xm, xn, s, c = ptolemy_identity_rev(m, n, x_mn)
-    data_configurations["ZBS"] = s
-    if not eq.sym:
-        data_configurations["ZBC"] = c
-    else:
-        data_configurations["ZBC"] = np.zeros_like(s)
-
-    # profiles
-    data_configurations["pressure_profile_type"] = (eq.pressure).__class__.__name__
-    data_configurations["pressure_profile_data1"] = (
-        eq.pressure.basis.modes[:, 0]
-        if not hasattr(eq.pressure, "knots")
-        else eq.pressure.knots
-    )
-    data_configurations["pressure_profile_data2"] = eq.pressure.params
-
-    if eq.current:
-        data_configurations["current_profile_type"] = (eq.current).__class__.__name__
-        data_configurations["current_profile_data1"] = (
-            eq.current.basis.modes[:, 0]
-            if not hasattr(eq.current, "knots")
-            else eq.current.knots
+        data_desc_runs.update(
+            {
+                "current_profile": eq.current(rho),
+                "iota_profile": round(data_rho["iota"], ndigits=14),
+                "iota_max": float(np.max(data_iota_dense)),
+                "iota_min": float(np.min(data_iota_dense)),
+                "current_specification": "net enclosed current",
+            }
         )
-        data_configurations["current_profile_data2"] = (
-            eq.current.params
-        )  # these are the coefficients
-    elif eq.iota:
-        data_configurations["iota_profile_type"] = (eq.iota).__class__.__name__
-        data_configurations["iota_profile_data1"] = (
-            eq.iota.basis.modes[:, 0]
-            if not hasattr(eq.iota, "knots")
-            else eq.iota.knots
-        )
-        data_configurations["iota_profile_data2"] = (
-            eq.iota.params
-        )  # these are the coefficients
 
-    data_configurations["date_created"] = kwargs.get("date_created", today)
-    data_configurations["date_updated"] = kwargs.get("date_updated", today)
-    if user_created is not None:
-        data_configurations["user_created"] = user_created
-    if user_updated is not None:
-        data_configurations["user_updated"] = user_updated
+    rho_grid_mercier = LinearGrid(
+        rho=np.linspace(0.1, 1.0, 11, endpoint=True), M=0, N=0, NFP=nfp
+    )
+    d_merc = eq.compute("D_Mercier", grid=rho_grid_mercier)["D_Mercier"]
+    data_desc_runs.update(
+        {
+            "D_Mercier_max": float(np.max(d_merc)),
+            "D_Mercier_min": float(np.min(d_merc)),
+            "D_Mercier": d_merc,
+            "vacuum": bool(
+                np.allclose(eq.pressure.params, 0)
+                and np.allclose(data_rho["current"], 0)
+            ),
+        }
+    )
 
-    csv_columns_desc_runs = list(data_desc_runs.keys())
-    csv_columns_desc_runs.sort()
-    desc_runs_csv_exists = os.path.isfile(desc_runs_csv_name)
+    data_configurations = {
+        "name": name,
+        "NFP": int(nfp),
+        "stell_sym": bool(eq.sym),
+        "deviceid": kwargs.get("deviceid"),
+        "provenance": provenance,
+        "description": description,
+        "toroidal_flux": float(eq.Psi),
+        "aspect_ratio": float(data_keys["R0/a"]),
+        "minor_radius": float(data_keys["a"]),
+        "major_radius": float(data_keys["R0"]),
+        "volume": float(data_keys["V"]),
+        "volume_averaged_B": float(data_keys["<|B|>_vol"]),
+        "volume_averaged_beta": float(data_keys["<beta>_vol"]),
+        "total_toroidal_current": float(f'{data_keys["current"][-1]:1.2e}'),
+        "R_excursion": float(f'{np.max(data_keys["R"]) - np.min(data_keys["R"]):1.4e}'),
+        "Z_excursion": float(f'{np.max(data_keys["Z"]) - np.min(data_keys["Z"]):1.4e}'),
+        "average_elongation": float(f'{np.mean(data_keys["a_major/a_minor"]):1.4e}'),
+        "classification": "AS" if eq.N == 0 else kwargs.get("config_class"),
+        "date_created": today,
+        "current_specification": data_desc_runs.get("current_specification"),
+    }
 
-    try:
-        with open(desc_runs_csv_name, "a+") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=csv_columns_desc_runs)
-            if not desc_runs_csv_exists:
-                writer.writeheader()  # only need header if file did not exist already
-            writer.writerow(data_desc_runs)
-    except OSError:
-        print("I/O error")
-    csv_columns_configurations = list(data_configurations.keys())
-    csv_columns_configurations.sort()
+    def get_surface_geometry(lmn, basis):
+        val = np.ones_like(lmn)
+        val[basis.modes[:, 1] < 0] *= -1
+        m, n, x_mn = zernike_to_fourier(val * lmn, basis=basis, rho=np.array([1.0]))
+        return ptolemy_identity_rev(m, n, x_mn)
 
-    configurations_csv_exists = os.path.isfile(configurations_csv_name)
-    try:
-        with open(configurations_csv_name, "a+") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=csv_columns_configurations)
-            if not configurations_csv_exists:
-                writer.writeheader()  # only need header if file did not exist already
-            writer.writerow(data_configurations)
-    except OSError:
-        print("I/O error")
+    xm, xn, s_R, c_R = get_surface_geometry(eq.R_lmn, eq.R_basis)
+    _, _, s_Z, c_Z = get_surface_geometry(eq.Z_lmn, eq.Z_basis)
 
+    data_configurations.update(
+        {
+            "m": xm,
+            "n": xn,
+            "RBC": c_R[0, :],
+            "RBS": np.zeros(c_R.shape[1]) if eq.sym else s_R[0, :],
+            "ZBS": s_Z[0, :],
+            "ZBC": np.zeros(s_Z.shape[1]) if eq.sym else c_Z[0, :],
+        }
+    )
+
+    for prof_name, prof_obj in [
+        ("pressure", eq.pressure),
+        ("current", getattr(eq, "current", None)),
+        ("iota", getattr(eq, "iota", None)),
+    ]:
+        if prof_obj:
+            data_configurations.update(
+                {
+                    f"{prof_name}_profile_type": type(prof_obj).__name__,
+                    f"{prof_name}_profile_data1": (
+                        prof_obj.knots
+                        if hasattr(prof_obj, "knots")
+                        else prof_obj.basis.modes[:, 0]
+                    ),
+                    f"{prof_name}_profile_data2": prof_obj.params,
+                }
+            )
+
+    _append_to_csv(
+        "desc_runs.csv", {k: v for k, v in data_desc_runs.items() if v is not None}
+    )
+    _append_to_csv(
+        "configurations.csv",
+        {k: v for k, v in data_configurations.items() if v is not None},
+    )
     return None
+
+
+def save_to_db_desc(
+    eq,
+    config_name,
+    username,
+    password,
+    uploadPlots=False,
+    description=None,
+    provenance=None,
+    deviceid=None,
+    isDeviceNew=False,
+    inputfile=False,
+    inputfilename=None,
+    config_class=None,
+    initialization_method="surface",
+    deviceDescription=None,
+    keep_artifacts=False,
+):
+    """Upload a DESC equilibrium to the stellarator database.
+
+    Prepares all required files (zip archive, CSV metadata, optional plots),
+    logs in to the website, and submits the upload form automatically.
+    Local files are cleaned up afterwards unless ``keep_artifacts=True``.
+
+    Parameters
+    ----------
+    eq : str or Equilibrium or EquilibriaFamily
+        DESC equilibrium to upload. If str, treated as a path to an ``.h5``
+        file (without extension). If EquilibriaFamily, the last element is used.
+    config_name : str
+        Name used for the configuration entry and to derive all output filenames.
+    username : str
+        Username for the database website.
+    password : str
+        Password for the database website.
+    uploadPlots : bool, optional
+        If True, generate and upload surface, Boozer, and 3-D plots (default False).
+    description : str, optional
+        Free-text description stored with the run and configuration.
+    provenance : str, optional
+        Free-text provenance note (e.g. paper reference or run description).
+    deviceid : int, optional
+        Database ID of the device this configuration belongs to.
+    isDeviceNew : bool, optional
+        If True, also create and upload a new device entry using ``config_name``
+        and ``deviceDescription`` (default False).
+    inputfile : bool, optional
+        If True, include the DESC input file in the upload. A file named
+        ``{config_name}_input.txt`` is used if it exists; otherwise one is
+        auto-generated (default False).
+    inputfilename : str, optional
+        Explicit path to the DESC input file. Implies ``inputfile=True`` when
+        provided and the file exists.
+    config_class : str, optional
+        Configuration class label (e.g. ``"QA"``, ``"QH"``). Ignored for
+        axisymmetric equilibria, which are always classified as ``"AS"``.
+    initialization_method : str, optional
+        Initialization method stored in the run metadata (default ``"surface"``).
+    deviceDescription : str, optional
+        Description for the new device entry. Only used when ``isDeviceNew=True``.
+    keep_artifacts : bool, optional
+        If True, keep all locally generated files after upload (default False).
+    """
+
+    filename, auto_input = _prepare_all_artifacts(
+        eq,
+        config_name,
+        description,
+        provenance,
+        deviceid,
+        isDeviceNew,
+        inputfile,
+        inputfilename,
+        config_class,
+        initialization_method,
+        deviceDescription,
+        uploadPlots,
+    )
+
+    print("Uploading to database...\n")
+    driver = get_driver()
+    perform_login(driver, username, password)
+    driver.get(f"{HOME_PAGE}/upload/")
+    try:
+        message = _upload_desc_files(driver, filename, isDeviceNew, uploadPlots)
+        print(message)
+    except Exception as e:
+        print(f"An error occurred during upload: {e}")
+    finally:
+        driver.quit()
+        _cleanup_local_files(filename, auto_input, uploadPlots, keep_artifacts)
+
+
+def generate_files_desc(
+    eq,
+    config_name,
+    uploadPlots=False,
+    description=None,
+    provenance=None,
+    deviceid=None,
+    isDeviceNew=False,
+    inputfile=False,
+    inputfilename=None,
+    config_class=None,
+    initialization_method="surface",
+    deviceDescription=None,
+):
+    """Generate and collect all database upload files into a local folder.
+
+    Performs the same file preparation as ``save_to_db_desc`` but instead of
+    uploading, moves everything into a folder named ``{config_name}/`` in the
+    current working directory. The folder can later be uploaded with
+    ``upload_files_desc``.
+
+    Parameters
+    ----------
+    eq : str or Equilibrium or EquilibriaFamily
+        DESC equilibrium to process. If str, treated as a path to an ``.h5``
+        file (without extension). If EquilibriaFamily, the last element is used.
+    config_name : str
+        Name used for the configuration entry, output folder, and all filenames.
+    uploadPlots : bool, optional
+        If True, generate surface, Boozer, and 3-D plot files (default False).
+    description : str, optional
+        Free-text description stored with the run and configuration.
+    provenance : str, optional
+        Free-text provenance note (e.g. paper reference or run description).
+    deviceid : int, optional
+        Database ID of the device this configuration belongs to.
+    isDeviceNew : bool, optional
+        If True, also create a device CSV for a new device entry (default False).
+    inputfile : bool, optional
+        If True, include the DESC input file. A file named
+        ``{config_name}_input.txt`` is used if it exists; otherwise one is
+        auto-generated (default False).
+    inputfilename : str, optional
+        Explicit path to the DESC input file. Implies ``inputfile=True`` when
+        provided and the file exists.
+    config_class : str, optional
+        Configuration class label (e.g. ``"QA"``, ``"QH"``). Ignored for
+        axisymmetric equilibria, which are always classified as ``"AS"``.
+    initialization_method : str, optional
+        Initialization method stored in the run metadata (default ``"surface"``).
+    deviceDescription : str, optional
+        Description for the new device entry. Only used when ``isDeviceNew=True``.
+    """
+    if not all([eq, config_name]):
+        raise ValueError("Please provide a valid input for eq and config_name.")
+
+    filename, auto_input = _prepare_all_artifacts(
+        eq,
+        config_name,
+        description,
+        provenance,
+        deviceid,
+        isDeviceNew,
+        inputfile,
+        inputfilename,
+        config_class,
+        initialization_method,
+        deviceDescription,
+        uploadPlots,
+    )
+
+    folder_name = filename
+    print(f"Creating folder {folder_name}...")
+    os.makedirs(folder_name, exist_ok=True)
+    print("Moving files to the folder...")
+
+    for f in [f"{filename}.zip", "desc_runs.csv", "configurations.csv"]:
+        shutil.move(f, os.path.join(folder_name, f))
+
+    if isDeviceNew and os.path.exists("devices_and_concepts.csv"):
+        shutil.move(
+            "devices_and_concepts.csv",
+            os.path.join(folder_name, "devices_and_concepts.csv"),
+        )
+    if auto_input:
+        auto_input_file = f"auto_generated_{filename}_input.txt"
+        if os.path.exists(auto_input_file):
+            shutil.move(auto_input_file, os.path.join(folder_name, auto_input_file))
+    if uploadPlots:
+        for f in [
+            f"{filename}_surface.webp",
+            f"{filename}_boozer.webp",
+            f"{filename}_3d.html",
+        ]:
+            if os.path.exists(f):
+                shutil.move(f, os.path.join(folder_name, f))
+
+    auto_save_name = f"{filename}_auto_save.h5"
+    if os.path.exists(auto_save_name):
+        os.remove(auto_save_name)
+
+
+def upload_files_desc(folder_path, username, password, verbose=1):
+    """Upload a pre-generated folder of DESC files to the database.
+
+    Scans ``folder_path`` for the expected files (zip archive, CSV metadata,
+    optional plots) and submits them via the website upload form. Use this
+    after ``generate_files_desc`` to separate file preparation from upload.
+
+    Parameters
+    ----------
+    folder_path : str
+        Path to the folder produced by ``generate_files_desc``. Must contain
+        at minimum a ``.zip`` archive, ``desc_runs.csv``, and
+        ``configurations.csv``.
+    username : str
+        Username for the database website.
+    password : str
+        Password for the database website.
+    verbose : int, optional
+        Verbosity level. ``0`` suppresses all output, ``1`` prints a status
+        line (default), ``2`` also lists the files being uploaded.
+    """
+    if not os.path.exists(folder_path):
+        raise FileNotFoundError(f"{folder_path} does not exist.")
+
+    uploadPlots = False
+    isDeviceNew = False
+    files = {
+        "zipToUpload": None,
+        "descToUpload": None,
+        "configToUpload": None,
+        "deviceToUpload": None,
+        "surfaceToUpload": None,
+        "boozerToUpload": None,
+        "plot3dToUpload": None,
+    }
+
+    for file in os.listdir(folder_path):
+        full_path = os.path.join(folder_path, file)
+        if file.endswith(".zip"):
+            files["zipToUpload"] = full_path
+        elif file.endswith(".csv"):
+            if "desc_runs" in file:
+                files["descToUpload"] = full_path
+            elif "configurations" in file:
+                files["configToUpload"] = full_path
+            elif "devices_and_concepts" in file:
+                files["deviceToUpload"] = full_path
+                isDeviceNew = True
+        elif file.endswith(".webp"):
+            if "surface" in file:
+                files["surfaceToUpload"] = full_path
+            elif "boozer" in file:
+                files["boozerToUpload"] = full_path
+        elif file.endswith(".html") and "3d" in file:
+            files["plot3dToUpload"] = full_path
+            uploadPlots = True
+
+    if verbose > 0:
+        print(f"Uploading contents of {folder_path} to database...\n")
+    if verbose > 1:
+        print(f"Files to upload: {[f for f in files.values() if f is not None]}")
+
+    driver = get_driver()
+    perform_login(driver, username, password)
+    driver.get(f"{HOME_PAGE}/upload/")
+
+    try:
+
+        def wait_and_send(element_id, filepath):
+            if filepath:
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.ID, element_id))
+                ).send_keys(os.path.abspath(filepath))
+
+        wait_and_send("zipToUpload", files["zipToUpload"])
+        wait_and_send("descToUpload", files["descToUpload"])
+        wait_and_send("configToUpload", files["configToUpload"])
+
+        if uploadPlots:
+            wait_and_send("surfaceToUpload", files["surfaceToUpload"])
+            wait_and_send("boozerToUpload", files["boozerToUpload"])
+            wait_and_send("plot3dToUpload", files["plot3dToUpload"])
+
+        if isDeviceNew:
+            wait_and_send("deviceToUpload", files["deviceToUpload"])
+
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "confirmDesc"))
+        ).click()
+        WebDriverWait(driver, 30).until(
+            lambda d: d.find_elements(By.CSS_SELECTOR, ".success-div, .error-div")
+        )
+        print(driver.find_element(By.CSS_SELECTOR, ".success-div, .error-div").text)
+    except Exception as e:
+        print(f"Upload failed: {e}")
+    finally:
+        driver.quit()
 
 
 def get_desc_by_id(
     id,
-    download_directory,
+    download_directory=None,
     delete_zip=False,
     return_names=False,
 ):
-    """Get a DESC equilibrium by its id from the database.
+    """Download and extract a DESC equilibrium from the database by its ID.
+
+    Queries the database for the given run ID, downloads the associated zip
+    archive, and extracts its contents into the current working directory.
 
     Parameters
     ----------
-    id : str
-        id of the equilibrium
-    download_directory : str
-        directory where the zip file is downloaded. Depends on the user's system.
-    delete_zip : bool (Default: False)
-        True if the zip file should be deleted after extracting the contents
-    return_names : bool (Default: False)
-        True if the names of the extracted files should be returned
+    id : int
+        The ``descrunid`` of the run to retrieve.
+    download_directory : str, optional
+        Directory where the browser saves the downloaded zip file. Defaults to
+        the current working directory. The browser is also configured to download
+        directly to this path, so no manual browser setup is needed.
+    delete_zip : bool, optional
+        If True, delete the downloaded zip file after extraction (default False).
+    return_names : bool, optional
+        If True, return a list of filenames that were extracted from the zip.
+        Returns ``None`` otherwise (default False).
 
     Returns
     -------
-    names : list
-        List of the names of the extracted files
-
-    Examples
-    --------
-    >>> from stelladb.db_desc import get_desc_by_id
-    >>> from desc.plotting import plot_surfaces
-    >>> from desc.equilibrium import Equilibrium
-
-    >>> names = get_desc_by_id(321, download_directory='/downloads', delete_zip=True, return_names=True)
-    >>> eq = Equilibrium.load(names[0])[-1]
-    >>> plot_surfaces(eq);
-
+    list of str or None
+        Names of the extracted files if ``return_names=True``, otherwise ``None``.
+        Also returns ``None`` if the ID does not exist or an error occurs.
     """
-    table_button_id = "qtable"
-    constraint_name_button_id = "qfin"
-    constraint_value_button_id = "qthr"
-    output_button_id = "qfout"
-    query_button_id = "submit"
-    download_button_name = "download-button-each"
-
+    if download_directory is None:
+        download_directory = os.getcwd()
     print("Searching in the database...")
-    driver = get_driver()
-    driver.get("https://ye2698.mycpanel.princeton.edu/query-page/")
+    driver = get_driver_for_download(download_directory)
+    driver.get(f"{HOME_PAGE}/query/")
 
     try:
-        timeout = 2
-        # Select desc_runs table
-        table_button = WebDriverWait(driver, timeout).until(
-            EC.presence_of_element_located((By.ID, table_button_id))
+        timeout = 10
+
+        # Select table — triggers AJAX to populate qfin and qfout
+        Select(
+            WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located((By.ID, "qtable"))
+            )
+        ).select_by_value("desc_runs")
+
+        # Wait for qfin options to be populated by AJAX, then select
+        WebDriverWait(driver, timeout).until(
+            lambda d: len(Select(d.find_element(By.ID, "qfin")).options) > 1
         )
-        table_button.send_keys("desc_runs")  # Select the table by typing its name
+        Select(driver.find_element(By.ID, "qfin")).select_by_value("descrunid")
 
-        time.sleep(0.5)  # Wait for the table to load available options
+        driver.find_element(By.ID, "qthr").send_keys(f"={id}")
 
-        # Select the 'descrunid' in constraint name
-        constraint_name_button = WebDriverWait(driver, timeout).until(
-            EC.presence_of_element_located((By.ID, constraint_name_button_id))
+        # Wait for qfout options, then select desc_runs.descrunid
+        WebDriverWait(driver, timeout).until(
+            lambda d: len(Select(d.find_element(By.ID, "qfout")).options) > 0
         )
-        constraint_name_button.send_keys("descrunid")
-
-        # Enter the constraint value (You can change this to whatever value you need)
-        constraint_value_button = WebDriverWait(driver, timeout).until(
-            EC.presence_of_element_located((By.ID, constraint_value_button_id))
+        Select(driver.find_element(By.ID, "qfout")).select_by_value(
+            "desc_runs.descrunid"
         )
-        constraint_value_button.send_keys(
-            f"={id}"
-        )  # Replace with the actual value you want to use
 
-        # Select the 'descrunid' in constraint name
-        output_name_button = WebDriverWait(driver, timeout).until(
-            EC.presence_of_element_located((By.ID, output_button_id))
-        )
-        output_name_button.send_keys("desc_runs->descrunid")
-
-        # Click the query button
-        query_button = WebDriverWait(driver, timeout).until(
-            EC.element_to_be_clickable((By.ID, query_button_id))
-        )
-        query_button.click()
-
+        driver.find_element(By.ID, "submit").click()
         print("Query submitted successfully!")
 
-        # Wait for the table and download button to appear within the <td> element
         try:
-            download_button = WebDriverWait(driver, timeout).until(
-                EC.presence_of_element_located((By.NAME, download_button_name))
+            download_link = WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located((By.NAME, "download-button-each"))
             )
-            # Click the download button to download the zip file
-            download_button.click()
+            download_link.click()
             print("Download completed successfully!")
         except TimeoutException:
             print(
-                f"Error: The download button did not appear within {timeout} seconds. Most "
-                f"likely, the id {id} does not exist in the database."
+                f"Error: The download button did not appear. Most likely, id {id} does not exist."
             )
             return None
 
-        # Wait for the download to complete (you can adjust the wait time if necessary)
-        time.sleep(1)  # Adjust the time based on the file size and download speed
+        time.sleep(1)
 
-        filename = get_file_in_directory(download_directory, f"desc_{id}_", ".zip")
+        filename = get_file_in_directory(download_directory, f"desc-eq-id{id}", ".zip")
 
-        # Extract the zip file
         with zipfile.ZipFile(filename, "r") as zip_ref:
             print(f"Extracting files: {zip_ref.namelist()}")
             zip_ref.extractall()
@@ -1169,11 +872,10 @@ def get_desc_by_id(
 
     except Exception as e:
         print(f"An error occurred: {e}")
-
+        return None
     finally:
         driver.quit()
 
     if return_names:
         return zip_ref.namelist()
-    else:
-        return None
+    return None
