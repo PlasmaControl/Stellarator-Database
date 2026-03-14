@@ -27,11 +27,11 @@ setup(
     author="Yigit Gunsur Elmacioglu, Rory Conlin, Dario Panici, Egemen Kolemen",
     author_email="PlasmaControl@princeton.edu",
     license="MIT",
-    keywords="stellarator tokamak equilibrium perturbation mhd "
+    keywords="stellarator tokamak equilibrium mhd "
     + "magnetohydrodynamics stability confinement plasma physics "
     + "optimization design fusion data database",
     packages=find_packages(exclude=["tutorials"]),
     include_package_data=True,
     install_requires=requirements,
-    python_requires=">=3.9",
+    python_requires=">=3.10",
 )

@@ -342,9 +342,9 @@ def get_config_from_root(root):
     # configparser.NoOptionError (if it lacks "VCS="). See the docstring at
     # the top of versioneer.py for instructions on writing your setup.cfg .
     setup_cfg = os.path.join(root, "setup.cfg")
-    parser = configparser.SafeConfigParser()
+    parser = configparser.RawConfigParser()
     with open(setup_cfg) as f:
-        parser.readfp(f)
+        parser.read_file(f)
     VCS = parser.get("versioneer", "VCS")  # mandatory
 
     def get(parser, name):
@@ -1543,7 +1543,7 @@ def get_cmdclass():
     cmds = {}
 
     # we add "version" to both distutils and setuptools
-    from distutils.core import Command
+    from setuptools import Command
 
     class cmd_version(Command):
         description = "report generated version string"
@@ -1583,10 +1583,7 @@ def get_cmdclass():
     #  setup.py egg_info -> ?
 
     # we override different "build_py" commands for both environments
-    if "setuptools" in sys.modules:
-        from setuptools.command.build_py import build_py as _build_py
-    else:
-        from distutils.command.build_py import build_py as _build_py
+    from setuptools.command.build_py import build_py as _build_py
 
     class cmd_build_py(_build_py):
         def run(self):
@@ -1673,10 +1670,7 @@ def get_cmdclass():
         cmds["py2exe"] = cmd_py2exe
 
     # we override different "sdist" commands for both environments
-    if "setuptools" in sys.modules:
-        from setuptools.command.sdist import sdist as _sdist
-    else:
-        from distutils.command.sdist import sdist as _sdist
+    from setuptools.command.sdist import sdist as _sdist
 
     class cmd_sdist(_sdist):
         def run(self):
