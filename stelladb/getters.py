@@ -1,76 +1,11 @@
 import os
 import warnings
 from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 from desc.equilibrium import Equilibrium
-
-
-def get_hash_desc(eq, data_desc_runs, config_hash):
-    """Get a unique identifier for a DESC equilibrium."""
-    if not isinstance(eq, Equilibrium):
-        warnings.warn(f"Expected type Equilibrium for eq, got type {type(eq)}")
-
-    unique_id = (
-        f"{eq.L}{eq.M}{eq.N}{eq.NFP}{config_hash}{data_desc_runs['current_profile']}"
-        + f"{data_desc_runs['iota_profile']}{data_desc_runs['pressure_profile']}{eq.params_dict}"
-    )
-
-    unique_id = unique_id.replace(" ", "")
-    unique_id = unique_id.replace("\n", "")
-    unique_id = unique_id.replace(".", "")
-    unique_id = unique_id.replace("[", "")
-    unique_id = unique_id.replace("]", "")
-    unique_id = unique_id.encode("utf8")
-
-    return hash(unique_id)
-
-
-def get_hash_config(data_configurations):
-    """Get a unique identifier for configuration."""
-
-    unique_id = ""
-    for key in data_configurations.keys():
-        if key not in [
-            "name",
-            "provenance",
-            "description",
-            "date_created",
-            "date_updated",
-            "user_created",
-            "user_updated",
-        ]:
-            unique_id += f"{data_configurations[key]}"
-
-    unique_id = unique_id.replace(" ", "")
-    unique_id = unique_id.replace("\n", "")
-    unique_id = unique_id.replace(".", "")
-    unique_id = unique_id.replace("[", "")
-    unique_id = unique_id.replace("]", "")
-    unique_id = unique_id.encode("utf8")
-
-    return hash(unique_id)
-
-
-def get_hash_device(devices_and_concepts):
-    """Get a unique identifier for device."""
-
-    unique_id = ""
-    for key in devices_and_concepts.keys():
-        if key not in [
-            "date_created",
-            "date_updated",
-            "user_created",
-            "user_updated",
-        ]:
-            unique_id += f"{devices_and_concepts[key]}"
-
-    unique_id = unique_id.replace(" ", "")
-    unique_id = unique_id.replace("\n", "")
-    unique_id = unique_id.replace(".", "")
-    unique_id = unique_id.replace("[", "")
-    unique_id = unique_id.replace("]", "")
-    unique_id = unique_id.encode("utf8")
-
-    return hash(unique_id)
+from .urls import HOME_PAGE
 
 
 def get_driver():
@@ -112,6 +47,37 @@ def get_driver():
     return None
 
 
+def get_driver_for_download(download_directory):
+    """Initialize a webdriver configured to save downloads to download_directory."""
+    abs_dir = os.path.abspath(download_directory)
+    try:
+        options = webdriver.ChromeOptions()
+        options.add_argument("--headless")
+        options.add_experimental_option(
+            "prefs",
+            {
+                "download.default_directory": abs_dir,
+                "download.prompt_for_download": False,
+            },
+        )
+        return webdriver.Chrome(options=options)
+    except Exception:
+        pass
+    try:
+        options = webdriver.FirefoxOptions()
+        options.add_argument("--headless")
+        options.set_preference("browser.download.folderList", 2)
+        options.set_preference("browser.download.manager.showWhenStarting", False)
+        options.set_preference("browser.download.dir", abs_dir)
+        options.set_preference(
+            "browser.helperApps.neverAsk.saveToDisk", "application/zip"
+        )
+        return webdriver.Firefox(options=options)
+    except Exception:
+        pass
+    return get_driver()
+
+
 def get_file_in_directory(directory, prefix, suffix):
     """Get the first file in the given directory with the given prefix and suffix."""
     # List all files in the given directory
@@ -123,3 +89,38 @@ def get_file_in_directory(directory, prefix, suffix):
                 directory, file_name
             )  # Return the full path to the file
     return None  # Return None if no matching file is found
+
+
+def perform_login(driver, username, password):
+    """Log in to the database website if not already authenticated.
+
+    Parameters
+    ----------
+    driver : selenium.webdriver
+        The webdriver instance to use.
+    username : str
+        Username for the database website.
+    password : str
+        Password for the database website.
+    """
+    login_url = HOME_PAGE + "/login/"
+    driver.get(login_url)
+
+    # If the site redirected away from the login page, already authenticated
+    if "login" not in driver.current_url:
+        return
+
+    # Fill in and submit the login form
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.ID, "username"))
+    ).send_keys(username)
+    driver.find_element(By.ID, "password").send_keys(password)
+    driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
+
+    # Wait for redirect away from login page
+    WebDriverWait(driver, 10).until(lambda d: "login" not in d.current_url)
+
+    # If still on login page, credentials were rejected
+    if "login" in driver.current_url:
+        driver.quit()
+        raise ValueError("Login failed. Please check your username and password.")
