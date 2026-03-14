@@ -13,9 +13,10 @@ def get_driver():
 
     try:
         options = webdriver.ChromeOptions()
-        options.add_argument("--headless")
+        options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
         return webdriver.Chrome(options=options)
     except:
         pass
@@ -40,12 +41,14 @@ def get_driver():
         options.add_argument("--headless")
         return webdriver.Edge(options=options)
     except:
-        warnings.warn(
+        raise NotImplementedError(
             "Failed to initialize any webdriver! Consider installing "
             "Chrome, Safari, Firefox, or Edge. If not possible, consider using "
             "the `generate_files_desc()` function, transfer files to a machine with "
             "a supported browser, and use the `upload_files_desc()` function to "
-            "upload to the database."
+            "upload to the database. Note that WSL, in general, cannot use "
+            "web browsers that are installed on the host Windows system, you "
+            "will need to install a browser within WSL to use this function."
         )
 
     # If no browser was successfully initialized, return None
@@ -57,9 +60,10 @@ def get_driver_for_download(download_directory):
     abs_dir = os.path.abspath(download_directory)
     try:
         options = webdriver.ChromeOptions()
-        options.add_argument("--headless")
+        options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
         options.add_experimental_option(
             "prefs",
             {
