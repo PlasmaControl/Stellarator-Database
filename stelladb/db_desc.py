@@ -16,7 +16,7 @@ from desc.equilibrium import Equilibrium, EquilibriaFamily
 from desc.grid import LinearGrid
 from desc.vmec_utils import ptolemy_identity_rev, zernike_to_fourier
 from desc.io.hdf5_io import hdf5Reader
-from desc.io.equilibrium_io import load
+from desc.io import load
 from desc.profiles import *
 
 from .getters import (
