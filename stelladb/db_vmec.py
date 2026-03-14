@@ -1,7 +1,5 @@
 """Functions to convert DESC or VMEC output files into .csv files for the Datbase."""
 
-import csv
-import os
 from datetime import date
 
 import numpy as np
@@ -9,6 +7,7 @@ from scipy.interpolate import InterpolatedUnivariateSpline
 from simsopt.mhd.vmec import Vmec
 
 from .device import device_or_concept_to_csv
+from .db_desc import _append_to_csv
 
 # TODO: add threshold to truncate at what amplitude surface Fourier coefficient
 # that it is working
@@ -35,50 +34,43 @@ def vmec_to_csv(  # noqa
     provenance=None,
     description=None,
     inputfilename=None,
-    initialization_method="surface",
-    user_created=None,
-    user_updated=None,
     **kwargs,
 ):
     """Save VMEC output file as a csv with relevant information.
 
     Parameters
     ----------
-        eq : str
-            VMEC equilibrium to save or path to .h5 of VMEC equilibrium to save
-        current : bool
-            True if the equilibrium was solved with fixed current or not if False,
-            was solved with fixed iota
-        name : str
-            name of configuration (and VMEC run)
-        provenance : str
-            where this configuration (and VMEC run) came from, e.g. VMEC github repo
-        description : str
-            description of the configuration (and VMEC run)
-        inputfilename : str
-            name of the input file corresponding to this configuration (and VMEC run)
-        initialization_method : str
-            how the VMEC equilibrium solution was initialized
-            one of "surface", "NAE", or the name of a .nc or .h5 file
-            corresponding to a VMEC (if .nc) or DESC (if .h5) solution
+    eq : str
+        VMEC equilibrium to save or path to .h5 of VMEC equilibrium to save
+    current : bool
+        True if the equilibrium was solved with fixed current or not if False,
+        was solved with fixed iota
+    name : str
+        name of configuration (and VMEC run)
+    provenance : str
+        where this configuration (and VMEC run) came from, e.g. VMEC github repo
+    description : str
+        description of the configuration (and VMEC run)
+    inputfilename : str
+        name of the input file corresponding to this configuration (and VMEC run)
 
     Kwargs
     ------
-        date_created : str
-            when the VMEC run was created, defaults to current day
-        publicationid : str
-            unique ID for a publication which this VMEC output file is associated with.
-        deviceid : str
-            unique ID for a device/concept which this configuration is associated with.
-        config_class : str
-            class of configuration i.e. quasisymmetry (QA, QH, QP)
-            or omnigenity (QI, OT, OH) or axisymmetry (AS).
-            Defaults to None for a stellarator and (AS) for a tokamak
-            #TODO: can we attempt to automatically detect this for QS configs?
-            maybe with a threshold on low QS, then if passes that, classify
-            based on largest Boozer mode? can add a flag to the table like
-            "automatically labelled class" if this occurs
-            to be transparent about source of the class if it was not a human
+    date_created : str
+        when the VMEC run was created, defaults to current day
+    publicationid : str
+        unique ID for a publication which this VMEC output file is associated with.
+    deviceid : str
+        unique ID for a device/concept which this configuration is associated with.
+    config_class : str
+        class of configuration i.e. quasisymmetry (QA, QH, QP)
+        or omnigenity (QI, OT, OH) or axisymmetry (AS).
+        Defaults to None for a stellarator and (AS) for a tokamak
+        #TODO: can we attempt to automatically detect this for QS configs?
+        maybe with a threshold on low QS, then if passes that, classify
+        based on largest Boozer mode? can add a flag to the table like
+        "automatically labelled class" if this occurs
+        to be transparent about source of the class if it was not a human
 
     Returns
     -------
@@ -106,23 +98,17 @@ def vmec_to_csv(  # noqa
         raise TypeError("Wrong VMEC file or object was passed!")
 
     ############ VMEC_runs Data Table ############
-    data_vmec_runs["configid"] = name
     if provenance is not None:
         data_vmec_runs["provenance"] = provenance
     if description is not None:
         data_vmec_runs["description"] = description
 
-    data_vmec_runs["version"] = version  # version property in wout
+    data_vmec_runs["vmec_version"] = version
     if inputfilename is not None:
-        data_vmec_runs["inputfilename"] = inputfilename
+        data_vmec_runs["inputfile"] = inputfilename
 
-    data_vmec_runs["initialization_method"] = (
-        initialization_method  # Not sure what this is
-    )
-
-    data_vmec_runs["ns"] = eq.ns
     data_vmec_runs["mpol"] = eq.mpol
-    data_vmec_runs["ntor"] = eq.ntor
+    data_vmec_runs["mtor"] = eq.ntor
 
     # save profiles
 
@@ -164,16 +150,10 @@ def vmec_to_csv(  # noqa
 
     today = date.today()
     data_vmec_runs["date_created"] = kwargs.get("date_created", today)
-    data_vmec_runs["date_updated"] = kwargs.get("date_updated", today)
     if kwargs.get("publicationid", None) is not None:
         data_vmec_runs["publicationid"] = kwargs.get("publicationid", None)
-    if user_created is not None:
-        data_vmec_runs["user_created"] = user_created
-    if user_updated is not None:
-        data_vmec_runs["user_updated"] = user_updated
 
     ############ configuration Data Table ############
-    data_configurations["configid"] = name  # FIXME what should this be? how to hash?
     data_configurations["name"] = name
     data_configurations["NFP"] = eq.nfp
     data_configurations["stell_sym"] = not eq.lasym
@@ -222,9 +202,7 @@ def vmec_to_csv(  # noqa
 
     # Not sure how you are computing the average elongation: all the R & Z info is above
 
-    data_configurations["class"] = kwargs.get("config_class", None)
-    if eq.ntor == 0:  # is axisymmetric
-        data_configurations["class"] = "AS"
+    data_configurations["classification"] = "AS" if eq.ntor == 0 else kwargs.get("config_class")
 
     # surface geometry
     # currently saving as VMEC format but I'd prefer if we could do DESC format...
@@ -249,49 +227,20 @@ def vmec_to_csv(  # noqa
     # the corresponding type of profile, to support more than just
     # power series
     data_configurations["pressure_profile_type"] = "power_series"
-    data_configurations["pressure_profile_data"] = eq.am  # these are the coefficients
+    data_configurations["pressure_profile_data1"] = np.arange(len(eq.am))
+    data_configurations["pressure_profile_data2"] = eq.am
 
     if current:
         data_configurations["current_profile_type"] = "power_series"
-        data_configurations["current_profile_data"] = eq.ac
-        data_configurations["iota_profile_type"] = None
-        data_configurations["iota_profile_data"] = None
+        data_configurations["current_profile_data1"] = np.arange(len(eq.ac))
+        data_configurations["current_profile_data2"] = eq.ac
     else:
         data_configurations["iota_profile_type"] = "power_series"
-        data_configurations["iota_profile_data"] = eq.ai
-        data_configurations["current_profile_type"] = None
-        data_configurations["current_profile_data"] = None
+        data_configurations["iota_profile_data1"] = np.arange(len(eq.ai))
+        data_configurations["iota_profile_data2"] = eq.ai
 
     data_configurations["date_created"] = kwargs.get("date_created", today)
-    data_configurations["date_updated"] = kwargs.get("date_updated", today)
-    if user_created is not None:
-        data_configurations["user_created"] = user_created
-    if user_updated is not None:
-        data_configurations["user_updated"] = user_updated
 
-    csv_columns_desc_runs = list(data_vmec_runs.keys())
-    csv_columns_desc_runs.sort()
-    desc_runs_csv_exists = os.path.isfile(vmec_runs_csv_name)
-
-    try:
-        with open(vmec_runs_csv_name, "a+") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=csv_columns_desc_runs)
-            if not desc_runs_csv_exists:
-                writer.writeheader()  # only need header if file did not exist already
-            writer.writerow(data_vmec_runs)
-    except OSError:
-        print("I/O error")
-    csv_columns_configurations = list(data_configurations.keys())
-    csv_columns_configurations.sort()
-
-    configurations_csv_exists = os.path.isfile(configurations_csv_name)
-    try:
-        with open(configurations_csv_name, "a+") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=csv_columns_configurations)
-            if not configurations_csv_exists:
-                writer.writeheader()  # only need header if file did not exist already
-            writer.writerow(data_configurations)
-    except OSError:
-        print("I/O error")
-
+    _append_to_csv(vmec_runs_csv_name, {k: v for k, v in data_vmec_runs.items() if v is not None})
+    _append_to_csv(configurations_csv_name, {k: v for k, v in data_configurations.items() if v is not None})
     return None
