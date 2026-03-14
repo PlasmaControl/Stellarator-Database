@@ -75,3 +75,11 @@ Configuration data already exists in the database with name: HELIOTRON.
 Then, you should change your `config_name` to match that and try again. Unfortunately, you first upload will use the existing configuration data. if you believe that is wrong please reach one of the admins to delete it.
 
 ## VMEC Utilities are not tested yet!
+
+## Installing Chrome on WSL2
+
+```
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo apt install ./google-chrome-stable_current_amd64.deb -y
+google-chrome --version
+```
