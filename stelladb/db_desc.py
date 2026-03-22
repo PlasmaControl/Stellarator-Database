@@ -300,10 +300,10 @@ def desc_to_csv(
         Extra fields passed directly into the CSV rows, e.g. ``deviceid``,
         ``config_class``, ``publicationid``, ``date_created``.
     """
-    data_desc_runs = {"outputfile": f"{name}_auto_save.h5"}
+    descruns = {"outputfile": f"{name}_auto_save.h5"}
 
     if isinstance(eq, str) and os.path.exists(eq):
-        data_desc_runs["outputfile"] = os.path.basename(eq)
+        descruns["outputfile"] = os.path.basename(eq)
         reader = hdf5Reader(eq)
         version = reader.read_dict().get("__version__", "unknown")
         eq = load(eq)
@@ -320,22 +320,12 @@ def desc_to_csv(
             f"Expected str, Equilibrium or EquilibriaFamily for eq, got {type(eq)}"
         )
 
-    if any(
-        type(prof).__name__ == "MTanhProfile"
-        for prof in (eq.pressure, eq.current, eq.iota)
-    ):
-        raise ValueError("MTanhProfile profiles are currently not supported.")
-
     nfp = eq.NFP
-    rho = np.linspace(0, 1.0, 11, endpoint=True)
-    rho_dense = np.linspace(0, 1.0, 101, endpoint=True)
+    rho = np.linspace(0, 1.0, 10, endpoint=True)
+    rho[0] = 1e-12
+    rho_grid = LinearGrid(rho=rho, M=eq.M_grid, N=eq.N_grid, NFP=nfp)
 
-    rho_grid = LinearGrid(rho=rho, M=0, N=0, NFP=nfp)
-    rho_grid_dense = LinearGrid(rho=rho_dense, M=0, N=0, NFP=nfp)
-    rho_grid.nodes[0, 0] = 1e-12
-    rho_grid_dense.nodes[0, 0] = 1e-12
-
-    data_keys = eq.compute(
+    eq_data = eq.compute(
         [
             "R0/a",
             "a",
@@ -343,18 +333,19 @@ def desc_to_csv(
             "V",
             "<|B|>_vol",
             "<beta>_vol",
-            "current",
             "R",
             "Z",
             "a_major/a_minor",
+            "|F|_normalized",
         ]
     )
     data_rho = eq.compute(["current", "iota"], grid=rho_grid)
-    data_iota_dense = eq.compute("iota", grid=rho_grid_dense)["iota"]
+    p_iota = rho_grid.compress(data_rho["iota"])
+    p_curr = rho_grid.compress(data_rho["current"])
 
     today = kwargs.get("date_created", date.today())
 
-    data_desc_runs.update(
+    descruns.update(
         {
             "provenance": provenance,
             "description": description,
@@ -369,41 +360,27 @@ def desc_to_csv(
             "n_grid": int(eq.N_grid),
             "profile_rho": rho,
             "pressure_profile": eq.pressure(rho),
-            "pressure_max": float(np.max(eq.pressure(rho_dense))),
-            "pressure_min": float(np.min(eq.pressure(rho_dense))),
+            "pressure_max": float(np.max(eq.pressure(rho))),
+            "pressure_min": float(np.min(eq.pressure(rho))),
+            "iota_profile": p_iota,
+            "iota_max": float(np.max(np.abs(p_iota))),
+            "iota_min": float(np.min(np.abs(p_iota))),
+            "current_profile": p_curr,
             "spectral_indexing": eq.spectral_indexing,
             "sym": bool(eq.sym),
             "date_created": today,
             "publicationid": kwargs.get("publicationid"),
+            "max_normalized_F_error": float(np.max(np.abs(eq_data["|F|_normalized"]))),
         }
     )
 
-    if eq.iota:
-        data_desc_runs.update(
-            {
-                "iota_profile": eq.iota(rho),
-                "iota_max": float(np.max(eq.iota(rho_dense))),
-                "iota_min": float(np.min(eq.iota(rho_dense))),
-                "current_profile": round(data_rho["current"], ndigits=14),
-                "current_specification": "iota",
-            }
-        )
-    elif eq.current:
-        data_desc_runs.update(
-            {
-                "current_profile": eq.current(rho),
-                "iota_profile": round(data_rho["iota"], ndigits=14),
-                "iota_max": float(np.max(data_iota_dense)),
-                "iota_min": float(np.min(data_iota_dense)),
-                "current_specification": "net enclosed current",
-            }
-        )
+    descruns["current_specification"] = "iota" if eq.iota else "net enclosed current"
 
     rho_grid_mercier = LinearGrid(
         rho=np.linspace(0.1, 1.0, 11, endpoint=True), M=0, N=0, NFP=nfp
     )
     d_merc = eq.compute("D_Mercier", grid=rho_grid_mercier)["D_Mercier"]
-    data_desc_runs.update(
+    descruns.update(
         {
             "D_Mercier_max": float(np.max(d_merc)),
             "D_Mercier_min": float(np.min(d_merc)),
@@ -415,7 +392,7 @@ def desc_to_csv(
         }
     )
 
-    data_configurations = {
+    config = {
         "name": name,
         "NFP": int(nfp),
         "stell_sym": bool(eq.sym),
@@ -423,19 +400,22 @@ def desc_to_csv(
         "provenance": provenance,
         "description": description,
         "toroidal_flux": float(eq.Psi),
-        "aspect_ratio": float(data_keys["R0/a"]),
-        "minor_radius": float(data_keys["a"]),
-        "major_radius": float(data_keys["R0"]),
-        "volume": float(data_keys["V"]),
-        "volume_averaged_B": float(data_keys["<|B|>_vol"]),
-        "volume_averaged_beta": float(data_keys["<beta>_vol"]),
-        "total_toroidal_current": float(f'{data_keys["current"][-1]:1.2e}'),
-        "R_excursion": float(f'{np.max(data_keys["R"]) - np.min(data_keys["R"]):1.4e}'),
-        "Z_excursion": float(f'{np.max(data_keys["Z"]) - np.min(data_keys["Z"]):1.4e}'),
-        "average_elongation": float(f'{np.mean(data_keys["a_major/a_minor"]):1.4e}'),
+        "aspect_ratio": float(eq_data["R0/a"]),
+        "minor_radius": float(eq_data["a"]),
+        "major_radius": float(eq_data["R0"]),
+        "volume": float(eq_data["V"]),
+        "volume_averaged_B": float(eq_data["<|B|>_vol"]),
+        "volume_averaged_beta": float(eq_data["<beta>_vol"]),
+        "total_toroidal_current": float(f"{np.max(np.abs(p_curr)):1.2e}"),
+        "R_excursion": float(f'{np.max(eq_data["R"]) - np.min(eq_data["R"]):1.4e}'),
+        "Z_excursion": float(f'{np.max(eq_data["Z"]) - np.min(eq_data["Z"]):1.4e}'),
+        "average_elongation": float(f'{np.mean(eq_data["a_major/a_minor"]):1.4e}'),
         "classification": "AS" if eq.N == 0 else kwargs.get("config_class"),
+        "current_specification": descruns.get("current_specification"),
+        "pressure_profile": descruns["pressure_profile"],
+        "iota_profile": descruns["iota_profile"],
+        "current_profile": descruns["current_profile"],
         "date_created": today,
-        "current_specification": data_desc_runs.get("current_specification"),
     }
 
     def get_surface_geometry(lmn, basis):
@@ -447,7 +427,7 @@ def desc_to_csv(
     xm, xn, s_R, c_R = get_surface_geometry(eq.R_lmn, eq.R_basis)
     _, _, s_Z, c_Z = get_surface_geometry(eq.Z_lmn, eq.Z_basis)
 
-    data_configurations.update(
+    config.update(
         {
             "m": xm,
             "n": xn,
@@ -458,30 +438,12 @@ def desc_to_csv(
         }
     )
 
-    for prof_name, prof_obj in [
-        ("pressure", eq.pressure),
-        ("current", getattr(eq, "current", None)),
-        ("iota", getattr(eq, "iota", None)),
-    ]:
-        if prof_obj:
-            data_configurations.update(
-                {
-                    f"{prof_name}_profile_type": type(prof_obj).__name__,
-                    f"{prof_name}_profile_data1": (
-                        prof_obj.knots
-                        if hasattr(prof_obj, "knots")
-                        else prof_obj.basis.modes[:, 0]
-                    ),
-                    f"{prof_name}_profile_data2": prof_obj.params,
-                }
-            )
-
     _append_to_csv(
-        "desc_runs.csv", {k: v for k, v in data_desc_runs.items() if v is not None}
+        "desc_runs.csv", {k: v for k, v in descruns.items() if v is not None}
     )
     _append_to_csv(
         "configurations.csv",
-        {k: v for k, v in data_configurations.items() if v is not None},
+        {k: v for k, v in config.items() if v is not None},
     )
     return None
 
