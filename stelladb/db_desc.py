@@ -261,9 +261,9 @@ def _cleanup_local_files(filename, auto_input, uploadPlots, keep_artifacts):
                     os.remove(f)
 
 
-def _format_array(arr):
+def _format_array(arr, sig=2):
     """Format an array of floats as a comma-separated string in scientific notation."""
-    return ", ".join(f"{v:.2e}" for v in arr)
+    return ", ".join(f"{v:.{sig}e}" for v in arr)
 
 
 # ---------------------------------------------------------------------------
@@ -444,10 +444,14 @@ def desc_to_csv(
         {
             "m": xm,
             "n": xn,
-            "RBC": c_R[0, :],
-            "RBS": np.zeros(c_R.shape[1]) if eq.sym else s_R[0, :],
-            "ZBS": s_Z[0, :],
-            "ZBC": np.zeros(s_Z.shape[1]) if eq.sym else c_Z[0, :],
+            "RBC": _format_array(c_R[0, :], sig=3),
+            "RBS": (
+                np.zeros(c_R.shape[1]) if eq.sym else _format_array(s_R[0, :], sig=3)
+            ),
+            "ZBS": _format_array(s_Z[0, :], sig=3),
+            "ZBC": (
+                np.zeros(s_Z.shape[1]) if eq.sym else _format_array(c_Z[0, :], sig=3)
+            ),
         }
     )
 
