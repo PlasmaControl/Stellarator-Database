@@ -261,6 +261,11 @@ def _cleanup_local_files(filename, auto_input, uploadPlots, keep_artifacts):
                     os.remove(f)
 
 
+def _format_array(arr):
+    """Format an array of floats as a comma-separated string in scientific notation."""
+    return ", ".join(f"{v:.2e}" for v in arr)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -358,33 +363,35 @@ def desc_to_csv(
             "m_grid": int(eq.M_grid),
             "n_tor": int(eq.N),
             "n_grid": int(eq.N_grid),
-            "profile_rho": rho,
-            "pressure_profile": eq.pressure(rho),
-            "pressure_max": float(np.max(eq.pressure(rho))),
-            "pressure_min": float(np.min(eq.pressure(rho))),
-            "iota_profile": p_iota,
-            "iota_max": float(np.max(np.abs(p_iota))),
-            "iota_min": float(np.min(np.abs(p_iota))),
-            "current_profile": p_curr,
+            "profile_rho": _format_array(rho),
+            "pressure_profile": _format_array(eq.pressure(rho)),
+            "pressure_max": round(float(np.max(eq.pressure(rho))), 3),
+            "pressure_min": round(float(np.min(eq.pressure(rho))), 3),
+            "iota_profile": _format_array(p_iota),
+            "iota_max": round(float(np.max(np.abs(p_iota))), 3),
+            "iota_min": round(float(np.min(np.abs(p_iota))), 3),
+            "current_profile": _format_array(p_curr),
             "spectral_indexing": eq.spectral_indexing,
             "sym": bool(eq.sym),
             "date_created": today,
             "publicationid": kwargs.get("publicationid"),
-            "max_normalized_F_error": float(np.max(np.abs(eq_data["|F|_normalized"]))),
+            "max_normalized_F_error": round(
+                float(np.max(np.abs(eq_data["|F|_normalized"]))), 3
+            ),
         }
     )
 
     descruns["current_specification"] = "iota" if eq.iota else "net enclosed current"
 
     rho_grid_mercier = LinearGrid(
-        rho=np.linspace(0.1, 1.0, 11, endpoint=True), M=0, N=0, NFP=nfp
+        rho=np.linspace(0.1, 1.0, 10, endpoint=True), M=0, N=0, NFP=nfp
     )
     d_merc = eq.compute("D_Mercier", grid=rho_grid_mercier)["D_Mercier"]
     descruns.update(
         {
-            "D_Mercier_max": float(np.max(d_merc)),
-            "D_Mercier_min": float(np.min(d_merc)),
-            "D_Mercier": d_merc,
+            "D_Mercier_max": round(float(np.max(d_merc)), 3),
+            "D_Mercier_min": round(float(np.min(d_merc)), 3),
+            "D_Mercier": _format_array(d_merc),
             "vacuum": bool(
                 np.allclose(eq.pressure.params, 0)
                 and np.allclose(data_rho["current"], 0)
@@ -399,17 +406,23 @@ def desc_to_csv(
         "deviceid": kwargs.get("deviceid"),
         "provenance": provenance,
         "description": description,
-        "toroidal_flux": float(eq.Psi),
-        "aspect_ratio": float(eq_data["R0/a"]),
-        "minor_radius": float(eq_data["a"]),
-        "major_radius": float(eq_data["R0"]),
-        "volume": float(eq_data["V"]),
-        "volume_averaged_B": float(eq_data["<|B|>_vol"]),
-        "volume_averaged_beta": float(eq_data["<beta>_vol"]),
-        "total_toroidal_current": float(f"{np.max(np.abs(p_curr)):1.2e}"),
-        "R_excursion": float(f'{np.max(eq_data["R"]) - np.min(eq_data["R"]):1.4e}'),
-        "Z_excursion": float(f'{np.max(eq_data["Z"]) - np.min(eq_data["Z"]):1.4e}'),
-        "average_elongation": float(f'{np.mean(eq_data["a_major/a_minor"]):1.4e}'),
+        "toroidal_flux": round(float(eq.Psi), 3),
+        "aspect_ratio": round(float(eq_data["R0/a"]), 3),
+        "minor_radius": round(float(eq_data["a"]), 3),
+        "major_radius": round(float(eq_data["R0"]), 3),
+        "volume": round(float(eq_data["V"]), 3),
+        "volume_averaged_B": round(float(eq_data["<|B|>_vol"]), 3),
+        "volume_averaged_beta": round(float(eq_data["<beta>_vol"]), 3),
+        "total_toroidal_current": round(float(f"{np.max(np.abs(p_curr)):1.2e}"), 3),
+        "R_excursion": round(
+            float(f'{np.max(eq_data["R"]) - np.min(eq_data["R"]):1.4e}'), 3
+        ),
+        "Z_excursion": round(
+            float(f'{np.max(eq_data["Z"]) - np.min(eq_data["Z"]):1.4e}'), 3
+        ),
+        "average_elongation": round(
+            float(f'{np.mean(eq_data["a_major/a_minor"]):1.4e}'), 3
+        ),
         "classification": "AS" if eq.N == 0 else kwargs.get("config_class"),
         "current_specification": descruns.get("current_specification"),
         "pressure_profile": descruns["pressure_profile"],
