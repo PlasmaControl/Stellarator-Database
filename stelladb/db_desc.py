@@ -4,6 +4,7 @@ import numpy as np
 import csv
 import zipfile
 import time
+import warnings
 from datetime import date
 
 from selenium import webdriver
@@ -125,15 +126,22 @@ def _generate_desc_plots(eq, filename, config_name):
         theta=np.linspace(0, 2 * np.pi, 30),
         zeta=np.linspace(0, 2 * np.pi, max(140, int(20 * eq.NFP))),
     )
-    plot_3d(eq, "|B|", fig=fig, grid=grid3d, cmap="plasma")
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Unequal number of field")
+        plot_3d(eq, "|B|", fig=fig, grid=grid3d, cmap="plasma")
     fig.update_layout(
-        width=1200,
-        height=800,
+        width=None,
+        height=None,
+        autosize=True,
         margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor="rgb(0, 0, 0)",
     )
     fig.write_html(
-        d3_filename, include_plotlyjs=False, full_html=False, div_id="plot3d"
+        d3_filename,
+        include_plotlyjs=False,
+        full_html=False,
+        div_id="plot3d",
+        config={"responsive": True},
     )
 
 
@@ -831,7 +839,10 @@ def get_desc_by_id(
             download_link = WebDriverWait(driver, timeout).until(
                 EC.presence_of_element_located((By.NAME, "download-button-each"))
             )
-            download_link.click()
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block:'center'})", download_link
+            )
+            driver.execute_script("arguments[0].click()", download_link)
             print("Download completed successfully!")
         except TimeoutException:
             print(
