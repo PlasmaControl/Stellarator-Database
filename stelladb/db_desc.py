@@ -809,9 +809,12 @@ def get_desc_by_id(
         WebDriverWait(driver, timeout).until(
             lambda d: len(Select(d.find_element(By.ID, "qfin")).options) > 1
         )
-        Select(driver.find_element(By.ID, "qfin")).select_by_value("descrunid")
+        Select(driver.find_element(By.ID, "qfin")).select_by_value(
+            "desc_runs.descrunid"
+        )
 
-        driver.find_element(By.ID, "qthr").send_keys(f"={id}")
+        Select(driver.find_element(By.ID, "qop")).select_by_value("=")
+        driver.find_element(By.ID, "qthr").send_keys(str(id))
 
         # Wait for qfout options, then select desc_runs.descrunid
         WebDriverWait(driver, timeout).until(
