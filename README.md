@@ -1,14 +1,15 @@
 # Stellarator-Database
-Includes the functions required to upload DESC or VMEC results to the stellarator database. You can access the database [here](https://ye2698.mycpanel.princeton.edu/).
+Includes the functions required to upload DESC results to the stellarator database. You can access the database [here](https://www.stellarator-database.org/).
 
-This is still a work in progress.
+This is still a work in progress. VMEC and coil data upload functions will be implemented soon!
 
 ## Install using pip
 If you are on Linux, WSL or MacOS, you should be able to install `stelladb` directly from PyPi.
 ```bash
 pip install stelladb
 ```
-You may have difficulty installing on Windows due to `simsopt` dependency. More detailed instructions will come for that. For now, you can use the repo on Windows with slight difference on building the environment.
+
+This package will be used along with DESC or SIMSOPT. You should install them separately to your environment.
 
 ## Install using GIT
 
@@ -28,7 +29,7 @@ conda activate db
 pip install -r requirements.txt
 ```
 
-If you are on Windows, `simsopt` might need additional instructions. If you just want to upload DESC results, follow these steps for creating conda environment,
+If you just want to upload DESC results, follow these steps for creating conda environment,
 ```bash
 conda create --name db 'python>=3.9, <=3.12'
 conda activate db
@@ -38,45 +39,12 @@ Then, you can upload to database inside the repo, or anywhere where you can acce
 
 ## Sample usage
 
-For more detailed explanation, refer to the notebooks in `tutorials` subfolder in the [repo](https://github.com/PlasmaControl/Stellarator-Database.git).
+For more detailed explanation, refer to the notebooks in `tutorials` subfolder in the [repo](https://github.com/PlasmaControl/Stellarator-Database/blob/main/tutorials/tutorial_basics.ipynb).
 
-```python
-from desc.examples import get
-from desc.equilibrium import Equilibrium
-from stelladb import save_to_db_desc, get_desc_by_id
-
-eq = get("HELIOTRON")
-
-# if you are using DESC, you can directly upload Equilibrium or 
-# EquilibriumFamily objects. For EquilibriumFamily, only the last
-# Equilibrium will be uploaded.
-save_to_db_desc(eq, config_name="test-HELIOTRON", user="username")
-
-# if you have an outfile, supply the name of it without extension
-# For DESC example, we need to save it first to get the .h5 file
-eq.save("test_output_HELIOTRON.h5")
-save_to_db_desc("test_output_HELIOTRON", config_name="another-HELIOTRON", user="username")
-
-# use copy parameter, if you want the local copy of the files that are uploaded
-# default value is False
-save_to_db_desc(eq, config_name="HELIOTRON-test-name", user="username", copy=True)
-
-# You can download a specific simulation by ID from the database
-# This function will download the stored .zip file, extract it and return the file names
-# to future use ex. creating Equilibrium object
-names = get_desc_by_id(id=321, delete_zip=True, return_names=True)
-eq2 = Equilibrium.load(names[0])[-1]  
-```
-
-You can give `config_name` as you wish. However, if there is an existing configuration with same parameters in the database, you will get following warning,
-```
-Configuration data already exists in the database with name: HELIOTRON.
-```
-Then, you should change your `config_name` to match that and try again. Unfortunately, you first upload will use the existing configuration data. if you believe that is wrong please reach one of the admins to delete it.
-
-## VMEC Utilities are not tested yet!
 
 ## Installing Chrome on WSL2
+
+The automated upload functions relies on `selenium` which opens a web browser on the background. To be able to use this package, you should have a web browser. On WSL, the system cannot use the browser installed on the Windows, you should install one to Linux subsystem too.
 
 ```
 wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb

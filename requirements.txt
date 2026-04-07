@@ -1,3 +1,2 @@
-desc-opt
 selenium
-# simsopt is an optional dependency
+# desc-opt and simsopt are expected to be installed separately
