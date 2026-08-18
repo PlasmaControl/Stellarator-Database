@@ -17,9 +17,6 @@ except ImportError:
 from .device import device_or_concept_to_csv
 from .db_desc import _append_to_csv
 
-# TODO: add threshold to truncate at what amplitude surface Fourier coefficient
-# that it is working
-
 # TODO: make arrays stored in one line
 
 # TODO: either make separate utilities for desc_runs csv and configurations csv,
@@ -210,27 +207,20 @@ def vmec_to_csv(  # noqa
 
     # Not sure how you are computing the average elongation: all the R & Z info is above
 
+    # TODO: fill in average_elongation, max_elongation, min_elongation,
+    # max_curvature and min_curvature for the configurations table. The DESC
+    # path (see db_desc.desc_to_csv) takes these from "a_major/a_minor" and
+    # from |curvature_k2_rho| evaluated on the rho=1 surface; the equivalent
+    # VMEC utilities do not exist yet, so these columns are left empty for
+    # VMEC uploads.
+
     data_configurations["classification"] = (
         "AS" if eq.ntor == 0 else kwargs.get("config_class")
     )
 
-    # surface geometry
-    # currently saving as VMEC format but I'd prefer if we could do DESC format...
-
-    data_configurations["m"] = xm
-    data_configurations["n"] = xn
-
-    data_configurations["RBC"] = rmnc
-    if eq.lasym:
-        data_configurations["RBS"] = rmns
-    else:
-        data_configurations["RBS"] = np.zeros_like(rmnc)
-    # Z
-    data_configurations["ZBS"] = zmns
-    if eq.lasym:
-        data_configurations["ZBC"] = zmnc
-    else:
-        data_configurations["ZBC"] = np.zeros_like(zmns)
+    # boundary surface resolution (max double Fourier mode numbers)
+    data_configurations["m"] = int(np.max(xm))
+    data_configurations["n"] = int(np.max(np.abs(xn)) // eq.nfp)
 
     # profiles
     # TODO: make dict of different classes of Profile and

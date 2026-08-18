@@ -15,7 +15,6 @@ from selenium.common.exceptions import TimeoutException
 
 from desc.equilibrium import Equilibrium, EquilibriaFamily
 from desc.grid import LinearGrid
-from desc.vmec_utils import ptolemy_identity_rev, zernike_to_fourier
 from desc.io.hdf5_io import hdf5Reader
 from desc.io import load
 from desc.profiles import *
@@ -114,7 +113,7 @@ def _generate_desc_plots(eq, filename, config_name):
     boozer_filename = filename + "_boozer.webp"
     d3_filename = filename + "_3d.html"
 
-    plot_surfaces(eq=eq, label=config_name)
+    plot_surfaces(eq=eq)
     plt.savefig(surface_filename, dpi=90)
     plot_boozer_surface(eq)
     plt.savefig(boozer_filename, dpi=90)
@@ -356,6 +355,19 @@ def desc_to_csv(
     p_iota = rho_grid.compress(data_rho["iota"])
     p_curr = rho_grid.compress(data_rho["current"])
 
+    # Elongation and curvature extrema are taken on the boundary. The default
+    # compute grid is a QuadratureGrid, whose rho nodes exclude rho=1: there
+    # the elongation is an extrapolation that washes out almost all of the
+    # variation with zeta, and the curvature is singular on the magnetic axis
+    # (the first fundamental form degenerates). Both need a rho=1 grid.
+    bdry_grid = LinearGrid(rho=np.array([1.0]), M=eq.M_grid, N=eq.N_grid, NFP=nfp)
+    bdry_data = eq.compute(["a_major/a_minor", "curvature_k2_rho"], grid=bdry_grid)
+    # Elongation varies only with zeta, so compress to one value per cross-section.
+    elongation = np.abs(
+        bdry_grid.compress(bdry_data["a_major/a_minor"], surface_label="zeta")
+    )
+    k2 = np.abs(bdry_data["curvature_k2_rho"])
+
     today = kwargs.get("date_created", date.today())
 
     descruns.update(
@@ -431,6 +443,12 @@ def desc_to_csv(
         "average_elongation": round(
             float(f'{np.mean(eq_data["a_major/a_minor"]):1.4e}'), 3
         ),
+        "max_elongation": round(float(np.max(elongation)), 3),
+        "min_elongation": round(float(np.min(elongation)), 3),
+        "max_curvature": round(float(np.max(k2)), 3),
+        "min_curvature": round(float(np.min(k2)), 3),
+        "m": int(eq.surface.M),
+        "n": int(eq.surface.N),
         "classification": "AS" if eq.N == 0 else kwargs.get("config_class"),
         "current_specification": descruns.get("current_specification"),
         "pressure_profile": descruns["pressure_profile"],
@@ -438,30 +456,6 @@ def desc_to_csv(
         "current_profile": descruns["current_profile"],
         "date_created": today,
     }
-
-    def get_surface_geometry(lmn, basis):
-        val = np.ones_like(lmn)
-        val[basis.modes[:, 1] < 0] *= -1
-        m, n, x_mn = zernike_to_fourier(val * lmn, basis=basis, rho=np.array([1.0]))
-        return ptolemy_identity_rev(m, n, x_mn)
-
-    xm, xn, s_R, c_R = get_surface_geometry(eq.R_lmn, eq.R_basis)
-    _, _, s_Z, c_Z = get_surface_geometry(eq.Z_lmn, eq.Z_basis)
-
-    config.update(
-        {
-            "m": xm,
-            "n": xn,
-            "RBC": _format_array(c_R[0, :], sig=3),
-            "RBS": (
-                np.zeros(c_R.shape[1]) if eq.sym else _format_array(s_R[0, :], sig=3)
-            ),
-            "ZBS": _format_array(s_Z[0, :], sig=3),
-            "ZBC": (
-                np.zeros(s_Z.shape[1]) if eq.sym else _format_array(c_Z[0, :], sig=3)
-            ),
-        }
-    )
 
     _append_to_csv(
         "desc_runs.csv", {k: v for k, v in descruns.items() if v is not None}
